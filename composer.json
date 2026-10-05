@@ -1,5 +1,5 @@
 {
-    "name": "tipi/laravel-translations",
+    "name": "laravel-tipi/translations",
     "description": "Flexible package for Model translations",
     "type": "library",
     "license": "MIT",
@@ -11,12 +11,23 @@
     ],
     "require": {
         "php": "^8.5",
-        "illuminate/database": "^12.0|^13.0",
-        "illuminate/support": "^12.0|^13.0"
+        "illuminate/database": "^13.0",
+        "illuminate/support": "^13.0"
+    },
+    "require-dev": {
+        "laravel/pint": "^1.32",
+        "orchestra/testbench": "^11.3",
+        "pestphp/pest": "^5.3",
+        "pestphp/pest-plugin-laravel": "^5.0"
     },
     "autoload": {
         "psr-4": {
             "Tipi\\Translations\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tipi\\Translations\\Tests\\": "tests/"
         }
     },
     "extra": {
@@ -26,9 +37,23 @@
             ]
         }
     },
-    "config": {
-        "sort-packages": true
+    "scripts": {
+        "test": "pest",
+        "format": "pint",
+        "format:test": "pint --test",
+        "check": [
+            "@format:test",
+            "@test"
+        ]
     },
-    "minimum-stability": "dev",
-    "prefer-stable": true
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": false
+        }
+    },
+    "support": {
+        "issues": "https://github.com/laravel-tipi/translations/issues",
+        "source": "https://github.com/laravel-tipi/translations"
+    }
 }
