@@ -7,6 +7,7 @@ namespace Tipi\Translations\Concerns;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Relations\MorphOne;
+use Tipi\Translations\Config\TranslationConfig;
 use Tipi\Translations\Contracts\LocaleProvider;
 use Tipi\Translations\Contracts\SharedTableTranslatableModel;
 use Tipi\Translations\Models\TranslationModel;
@@ -21,8 +22,11 @@ trait HasSharedTableTranslations
 
     public function translationRecords(): MorphMany
     {
+        /** @var TranslationModel $model */
+        $model = resolve(TranslationConfig::class)->translationModel;
+
         return $this->morphMany(
-            TranslationModel::class,
+            $model,
             'translatable',
         );
     }

@@ -7,6 +7,7 @@ namespace Tipi\Translations\Models;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Tipi\Translations\Config\TranslationConfig;
 
 /**
  * @property array<string, mixed> $values
@@ -19,7 +20,10 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 ])]
 class TranslationModel extends Model
 {
-    protected $table = 'translations';
+    public function getTable(): string
+    {
+        return resolve(TranslationConfig::class)->translationsTable;
+    }
 
     protected function casts(): array
     {

@@ -6,6 +6,7 @@ namespace Tipi\Translations;
 
 use Illuminate\Support\ServiceProvider;
 use Tipi\Translations\Config\TranslationConfig;
+use Tipi\Translations\Contracts\LocaleProvider;
 
 final class TranslationServiceProvider extends ServiceProvider
 {
@@ -24,6 +25,13 @@ final class TranslationServiceProvider extends ServiceProvider
                 localeProvider: resolve(
                     config('translation.locale_provider'),
                 ),
+            ),
+        );
+
+        $this->app->singleton(
+            LocaleProvider::class,
+            fn (): LocaleProvider => resolve(
+                config('translation.locale_provider'),
             ),
         );
     }
