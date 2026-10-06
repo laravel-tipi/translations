@@ -39,10 +39,6 @@ final class TranslationServiceProvider extends ServiceProvider
         $this->loadMigrationsFrom(
             __DIR__.'/../database/migrations',
         );
-        $this->loadViewsFrom(
-            __DIR__.'/../resources/views',
-            'tipi-translations',
-        );
 
         $this->publishes([
             __DIR__.'/../config/translation.php' => config_path('translation.php'),
