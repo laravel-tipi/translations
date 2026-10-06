@@ -6,8 +6,8 @@ namespace Tipi\Translations\Concerns;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Tipi\Localization\LocaleResolver;
-use Tipi\Localization\Models\LocaleModel;
+use Tipi\Localization\Locale;
+use Tipi\Translations\Contracts\LocaleProvider;
 use Tipi\Translations\Contracts\TranslatableModel;
 
 /**
@@ -48,15 +48,9 @@ trait IsTranslation
         );
     }
 
-    /**
-     * @return BelongsTo<LocaleModel, $this>
-     */
-    public function locale(): BelongsTo
+    public function locale(): Locale
     {
-        return $this->belongsTo(
-            LocaleModel::class,
-            'locale_code',
-        );
+        return resolve(LocaleProvider::class)->supportedLocale($this->locale_code);
     }
 
     public function canBeDeleted(): bool
@@ -76,7 +70,7 @@ trait IsTranslation
 
     public function isDefault(): bool
     {
-        return $this->locale?->code === static::getLocaleResolver()->getDefaultCode();
+        return $this->locale_code === resolve(LocaleProvider::class)->default()->code;
     }
 
     protected static function translationParentForeignKey(): string
@@ -91,10 +85,5 @@ trait IsTranslation
         return str(static::class)
             ->beforeLast('Translation')
             ->toString();
-    }
-
-    protected static function getLocaleResolver(): LocaleResolver
-    {
-        return app(LocaleResolver::class);
     }
 }

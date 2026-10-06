@@ -6,6 +6,7 @@ namespace Tipi\Translations\Contracts;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Tipi\Localization\Locale;
 
 /**
  * @property $outdated_at
@@ -20,6 +21,8 @@ interface TranslationModelContract
     public static function getTranslatableModelClass(): string;
 
     public function translatable(): BelongsTo;
+
+    public function locale(): Locale;
 
     public function isDefault(): bool;
 
