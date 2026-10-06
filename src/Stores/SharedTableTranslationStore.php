@@ -35,9 +35,6 @@ class SharedTableTranslationStore
     /**
      * @return Collection<int, Translation>
      */
-    /**
-     * @return Collection<int, Translation>
-     */
     public function all(
         Model&SharedTableTranslatableModel $translatable,
     ): Collection {

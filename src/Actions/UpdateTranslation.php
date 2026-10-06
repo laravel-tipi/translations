@@ -10,6 +10,7 @@ use JsonException;
 use LogicException;
 use Throwable;
 use Tipi\Translations\Contracts\LocaleProvider;
+use Tipi\Translations\Contracts\TracksOutdatedTranslations;
 use Tipi\Translations\Contracts\TranslatableModel;
 use Tipi\Translations\Exceptions\TranslationDoesNotExistException;
 use Tipi\Translations\Translation;
@@ -75,7 +76,30 @@ final readonly class UpdateTranslation
         $localeCode ??= $this->locales->current()->code;
 
         if (! $this->translations->exists($translatable, $localeCode)) {
-            throw new TranslationDoesNotExistException($localeCode);
+            throw new TranslationDoesNotExistException(
+                code: $localeCode
+            );
+        }
+
+        if (! $this->translations->exists($translatable, $localeCode)) {
+            throw new TranslationDoesNotExistException(
+                code: $localeCode,
+            );
+        }
+
+        if ($markOthersAsOutdated) {
+            if (! $translatable instanceof TracksOutdatedTranslations) {
+                throw new LogicException(sprintf(
+                    'Translatable model [%s] does not support outdated translation tracking.',
+                    $translatable::class,
+                ));
+            }
+
+            if ($localeCode !== $this->locales->default()->code) {
+                throw new LogicException(
+                    'Only the default translation can mark other translations as outdated.',
+                );
+            }
         }
 
         $translation = $this->translations->update(
@@ -85,6 +109,7 @@ final readonly class UpdateTranslation
         );
 
         if ($markOthersAsOutdated) {
+            /** @var Model&TranslatableModel&TracksOutdatedTranslations $translatable */
             $this->translations->markOthersAsOutdated(
                 translatable: $translatable,
                 localeCode: $localeCode,

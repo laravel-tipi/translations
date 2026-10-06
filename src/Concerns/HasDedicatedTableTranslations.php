@@ -34,6 +34,20 @@ trait HasDedicatedTableTranslations
         );
     }
 
+    public static function bootHasDedicatedTableTranslations(): void
+    {
+        static::deleting(function (Model $model): void {
+            if (
+                method_exists($model, 'isForceDeleting')
+                && ! $model->isForceDeleting()
+            ) {
+                return;
+            }
+
+            $model->translationRecords()->delete();
+        });
+    }
+
     public function defaultTranslationRecord(): HasOne
     {
         return $this->hasOne(static::getTranslationModelClass())

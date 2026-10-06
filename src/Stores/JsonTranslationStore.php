@@ -105,7 +105,7 @@ final readonly class JsonTranslationStore
 
             $translatable->setAttribute(
                 $attribute,
-                $translations,
+                $this->encode($translations),
             );
         }
 
@@ -135,7 +135,7 @@ final readonly class JsonTranslationStore
 
             $translatable->setAttribute(
                 $attribute,
-                $translations,
+                $this->encode($translations),
             );
         }
 
@@ -163,7 +163,7 @@ final readonly class JsonTranslationStore
 
             $translatable->setAttribute(
                 $attribute,
-                $translations,
+                $this->encode($translations),
             );
         }
 
@@ -172,6 +172,7 @@ final readonly class JsonTranslationStore
 
     /**
      * @return array<string, mixed>
+     *
      * @throws JsonException
      */
     private function attributes(
@@ -195,6 +196,7 @@ final readonly class JsonTranslationStore
 
     /**
      * @return array<string, mixed>
+     *
      * @throws JsonException
      */
     private function decode(mixed $value): array
@@ -211,6 +213,17 @@ final readonly class JsonTranslationStore
             $value,
             true,
             flags: JSON_THROW_ON_ERROR,
+        );
+    }
+
+    /**
+     * @throws JsonException
+     */
+    private function encode(array $translations): string
+    {
+        return json_encode(
+            $translations,
+            JSON_THROW_ON_ERROR,
         );
     }
 }

@@ -26,6 +26,20 @@ trait HasSharedTableTranslations
         );
     }
 
+    public static function bootHasSharedTableTranslations(): void
+    {
+        static::deleting(function (Model $model): void {
+            if (
+                method_exists($model, 'isForceDeleting')
+                && ! $model->isForceDeleting()
+            ) {
+                return;
+            }
+
+            $model->translationRecords()->delete();
+        });
+    }
+
     public function defaultTranslationRecords(): MorphMany
     {
         return $this->morphMany(
