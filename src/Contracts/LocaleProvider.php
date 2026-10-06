@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Tipi\Translations\Contracts;
 
 use Illuminate\Support\Collection;
-use Tipi\Localization\Locale;
+use Tipi\Support\Locale;
 
 interface LocaleProvider
 {

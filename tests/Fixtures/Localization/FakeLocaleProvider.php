@@ -5,8 +5,9 @@ declare(strict_types=1);
 namespace Tipi\Translations\Tests\Fixtures\Localization;
 
 use Illuminate\Support\Collection;
-use Tipi\Localization\Enums\TextDirection;
-use Tipi\Localization\Locale;
+use InvalidArgumentException;
+use Tipi\Support\Enums\TextDirection;
+use Tipi\Support\Locale;
 use Tipi\Translations\Contracts\LocaleProvider;
 
 final class FakeLocaleProvider implements LocaleProvider
@@ -74,7 +75,7 @@ final class FakeLocaleProvider implements LocaleProvider
     public function supportedLocale(string $code): Locale
     {
         return $this->locales->get($code)
-            ?? throw new \InvalidArgumentException(
+            ?? throw new InvalidArgumentException(
                 sprintf('Unsupported locale [%s].', $code),
             );
     }

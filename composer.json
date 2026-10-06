@@ -20,6 +20,7 @@
         "php": "^8.5",
         "illuminate/database": "^13.0",
         "illuminate/support": "^13.0",
+        "laravel-tipi/support": "^1.0",
         "laravel-tipi/localization": "^0.1"
     },
     "require-dev": {

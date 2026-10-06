@@ -6,7 +6,7 @@ namespace Tipi\Translations\Concerns;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Tipi\Localization\Locale;
+use Tipi\Support\Locale;
 use Tipi\Translations\Contracts\LocaleProvider;
 use Tipi\Translations\Contracts\TranslatableModel;
 

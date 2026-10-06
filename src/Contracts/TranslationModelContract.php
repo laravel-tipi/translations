@@ -6,7 +6,7 @@ namespace Tipi\Translations\Contracts;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Tipi\Localization\Locale;
+use Tipi\Support\Locale;
 
 /**
  * @property $outdated_at

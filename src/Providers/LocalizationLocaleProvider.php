@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Tipi\Translations\Providers;
 
 use Illuminate\Support\Collection;
-use Tipi\Localization\Locale;
 use Tipi\Localization\LocaleRegistry;
 use Tipi\Localization\LocaleResolver;
+use Tipi\Support\Locale;
 use Tipi\Translations\Contracts\LocaleProvider;
 
 final readonly class LocalizationLocaleProvider implements LocaleProvider
