@@ -57,7 +57,7 @@ trait HasLocalizedTranslations
         );
 
         return data_get(
-            target: $translation,
+            target: $translation?->attributes,
             key: $attribute,
             default: $default,
         );

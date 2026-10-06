@@ -10,7 +10,7 @@ use Tipi\Translations\Contracts\SharedTableTranslatableModel;
 use Tipi\Translations\Models\TranslationModel;
 use Tipi\Translations\Translation;
 
-class SharedTableTranslationStore
+final readonly class SharedTableTranslationStore
 {
     public function get(
         Model&SharedTableTranslatableModel $translatable,

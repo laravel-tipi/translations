@@ -9,7 +9,7 @@ use Tipi\Translations\Enums\TranslationDriver;
 final readonly class TranslationConfig
 {
     /**
-     * @param array<int, string> $attributes
+     * @param  array<int, string>  $attributes
      */
     public function __construct(
         public TranslationDriver $driver,

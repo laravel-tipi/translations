@@ -6,6 +6,4 @@ namespace Tipi\Translations\Exceptions;
 
 use LogicException;
 
-abstract class TranslationConfigurationException extends LogicException
-{
-}
+abstract class TranslationConfigurationException extends LogicException {}

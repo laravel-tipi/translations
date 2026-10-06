@@ -47,7 +47,10 @@ final readonly class JsonTranslationStore
 
         foreach ($translatable::getTranslatableAttributes() as $attribute) {
             $translations = $this->decode(
-                $translatable->getRawOriginal($attribute),
+                $this->rawAttribute(
+                    translatable: $translatable,
+                    attribute: $attribute,
+                )
             );
 
             $localeCodes->push(...array_keys($translations));
@@ -77,7 +80,10 @@ final readonly class JsonTranslationStore
     ): bool {
         foreach ($translatable::getTranslatableAttributes() as $attribute) {
             $translations = $this->decode(
-                $translatable->getRawOriginal($attribute),
+                $this->rawAttribute(
+                    translatable: $translatable,
+                    attribute: $attribute,
+                ),
             );
 
             if (array_key_exists($localeCode, $translations)) {
@@ -98,7 +104,10 @@ final readonly class JsonTranslationStore
     ): Translation {
         foreach ($attributes as $attribute => $value) {
             $translations = $this->decode(
-                $translatable->getRawOriginal($attribute),
+                $this->rawAttribute(
+                    translatable: $translatable,
+                    attribute: $attribute,
+                ),
             );
 
             $translations[$localeCode] = $value;
@@ -128,7 +137,10 @@ final readonly class JsonTranslationStore
     ): Translation {
         foreach ($attributes as $attribute => $value) {
             $translations = $this->decode(
-                $translatable->getRawOriginal($attribute),
+                $this->rawAttribute(
+                    translatable: $translatable,
+                    attribute: $attribute,
+                ),
             );
 
             $translations[$localeCode] = $value;
@@ -156,7 +168,10 @@ final readonly class JsonTranslationStore
     ): void {
         foreach ($translatable::getTranslatableAttributes() as $attribute) {
             $translations = $this->decode(
-                $translatable->getRawOriginal($attribute),
+                $this->rawAttribute(
+                    translatable: $translatable,
+                    attribute: $attribute,
+                ),
             );
 
             unset($translations[$localeCode]);
@@ -183,7 +198,10 @@ final readonly class JsonTranslationStore
 
         foreach ($translatable::getTranslatableAttributes() as $attribute) {
             $translations = $this->decode(
-                $translatable->getRawOriginal($attribute),
+                $this->rawAttribute(
+                    translatable: $translatable,
+                    attribute: $attribute,
+                ),
             );
 
             if (array_key_exists($localeCode, $translations)) {
@@ -225,5 +243,12 @@ final readonly class JsonTranslationStore
             $translations,
             JSON_THROW_ON_ERROR,
         );
+    }
+
+    private function rawAttribute(
+        Model&JsonTranslatableModel $translatable,
+        string $attribute,
+    ): mixed {
+        return $translatable->getAttributes()[$attribute] ?? null;
     }
 }

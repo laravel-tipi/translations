@@ -9,7 +9,7 @@ use Tipi\Translations\Contracts\TranslatableModel;
 final readonly class Translation
 {
     /**
-     * @param array<string, mixed> $attributes
+     * @param  array<string, mixed>  $attributes
      */
     public function __construct(
         public TranslatableModel $translatable,

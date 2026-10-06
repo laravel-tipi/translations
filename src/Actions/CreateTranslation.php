@@ -20,8 +20,8 @@ final readonly class CreateTranslation
     public function __construct(
         private LocaleProvider $locales,
         private TranslationManager $translations,
-    ) {
-    }
+        private LockTranslatable $lockTranslatable,
+    ) {}
 
     /**
      * @throws Throwable
@@ -65,13 +65,16 @@ final readonly class CreateTranslation
         array $attributes,
         ?string $localeCode,
     ): Translation {
-        $translatable = $translatable->newQuery()
-            ->lockForUpdate()
-            ->findOrFail($translatable->getKey());
+        $translatable = $this->lockTranslatable->execute(
+            translatable: $translatable,
+        );
 
         $localeCode ??= $this->locales->default()->code;
 
-        if ($this->translations->exists($translatable, $localeCode)) {
+        if ($this->translations->exists(
+            translatable: $translatable,
+            localeCode: $localeCode,
+        )) {
             throw new TranslationAlreadyExistsException(
                 code: $localeCode,
             );

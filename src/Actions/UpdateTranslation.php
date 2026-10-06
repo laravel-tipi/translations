@@ -21,6 +21,7 @@ final readonly class UpdateTranslation
     public function __construct(
         private LocaleProvider $locales,
         private TranslationManager $translations,
+        private LockTranslatable $lockTranslatable,
     ) {}
 
     /**
@@ -69,15 +70,15 @@ final readonly class UpdateTranslation
         ?string $localeCode,
         bool $markOthersAsOutdated,
     ): Translation {
-        $translatable = $translatable->newQuery()
-            ->lockForUpdate()
-            ->findOrFail($translatable->getKey());
+        $translatable = $this->lockTranslatable->execute(
+            translatable: $translatable,
+        );
 
         $localeCode ??= $this->locales->current()->code;
 
         if (! $this->translations->exists($translatable, $localeCode)) {
             throw new TranslationDoesNotExistException(
-                code: $localeCode
+                code: $localeCode,
             );
         }
 

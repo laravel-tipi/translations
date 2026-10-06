@@ -15,8 +15,7 @@ final readonly class LocalizationLocaleProvider implements LocaleProvider
     public function __construct(
         private LocaleRegistry $locales,
         private LocaleResolver $localeResolver,
-    ) {
-    }
+    ) {}
 
     public function supported(): Collection
     {
@@ -27,7 +26,7 @@ final readonly class LocalizationLocaleProvider implements LocaleProvider
     {
         return $this->localeResolver->current();
     }
-    
+
     public function default(): Locale
     {
         return $this->locales->default();

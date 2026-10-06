@@ -42,5 +42,32 @@ trait CreatesTestSchema
             $table->json('description')->nullable();
             $table->timestamps();
         });
+
+        Schema::create('soft_deleting_dedicated_articles', function (Blueprint $table): void {
+            $table->id();
+            $table->softDeletes();
+            $table->timestamps();
+        });
+
+        Schema::create('soft_deleting_dedicated_article_translations', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('soft_deleting_dedicated_article_id');
+            $table->string('locale_code');
+            $table->string('title')->nullable();
+            $table->text('description')->nullable();
+            $table->timestamp('outdated_at')->nullable();
+            $table->timestamps();
+
+            $table->unique([
+                'soft_deleting_dedicated_article_id',
+                'locale_code',
+            ]);
+        });
+
+        Schema::create('soft_deleting_shared_articles', function (Blueprint $table): void {
+            $table->id();
+            $table->softDeletes();
+            $table->timestamps();
+        });
     }
 }

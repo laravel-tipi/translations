@@ -7,7 +7,7 @@ namespace Tipi\Translations\Exceptions;
 final class InvalidTranslationAttributeException extends TranslationConfigurationException
 {
     /**
-     * @param array<int, string> $attributes
+     * @param  array<int, string>  $attributes
      */
     public static function forAttributes(
         string $model,

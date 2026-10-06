@@ -20,6 +20,7 @@ final readonly class DeleteTranslation
     public function __construct(
         private LocaleProvider $locales,
         private TranslationManager $translations,
+        private LockTranslatable $lockTranslatable,
     ) {}
 
     /**
@@ -62,9 +63,9 @@ final readonly class DeleteTranslation
         Model&TranslatableModel $translatable,
         ?string $localeCode,
     ): void {
-        $translatable = $translatable->newQuery()
-            ->lockForUpdate()
-            ->findOrFail($translatable->getKey());
+        $translatable = $this->lockTranslatable->execute(
+            translatable: $translatable,
+        );
 
         $localeCode ??= $this->locales->current()->code;
 

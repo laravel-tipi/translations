@@ -6,6 +6,4 @@ namespace Tipi\Translations\Exceptions;
 
 use RuntimeException;
 
-abstract class TranslationException extends RuntimeException
-{
-}
+abstract class TranslationException extends RuntimeException {}
