@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tipi\Translations;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Collection;
 use JsonException;
 use LogicException;
 use Throwable;
@@ -26,6 +27,21 @@ final readonly class TranslationManager
         private SharedTableTranslationStore $sharedTableStore,
     ) {}
 
+    /**
+     * @return Collection<string, Translation>
+     * @throws JsonException
+     */
+    public function getAll(
+        Model&TranslatableModel $translatable,
+    ): Collection {
+        return $this->store($translatable)->all(
+            translatable: $translatable,
+        );
+    }
+
+    /**
+     * @throws JsonException
+     */
     public function get(
         Model&TranslatableModel $translatable,
         string $localeCode,
@@ -36,6 +52,9 @@ final readonly class TranslationManager
         );
     }
 
+    /**
+     * @throws JsonException
+     */
     public function exists(
         Model&TranslatableModel $translatable,
         string $localeCode,
@@ -100,7 +119,7 @@ final readonly class TranslationManager
     }
 
     public function markOthersAsOutdated(
-        Model&TranslatableModel&TracksOutdatedTranslations $translatable,
+        Model&TracksOutdatedTranslations $translatable,
         string $localeCode,
     ): void {
         $this->outdatedTrackingStore($translatable)->markOthersAsOutdated(
@@ -124,7 +143,7 @@ final readonly class TranslationManager
     }
 
     private function outdatedTrackingStore(
-        Model&TranslatableModel&TracksOutdatedTranslations $translatable,
+        Model&TracksOutdatedTranslations $translatable,
     ): DedicatedTableTranslationStore|SharedTableTranslationStore {
         return match (true) {
             $translatable instanceof DedicatedTableTranslatableModel => $this->dedicatedTableStore,
