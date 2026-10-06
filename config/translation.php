@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use Tipi\Translations\Contracts\LocaleProvider;
 use Tipi\Translations\Models\TranslationModel;
+use Tipi\Translations\Providers\LocalizationLocaleProvider;
 
 return [
     /*
@@ -19,5 +19,5 @@ return [
     /*
      * The locale provider implementation.
      */
-    'locale_provider' => LocaleProvider::class,
+    'locale_provider' => LocalizationLocaleProvider::class,
 ];

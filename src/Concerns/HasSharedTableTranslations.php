@@ -10,7 +10,6 @@ use Illuminate\Database\Eloquent\Relations\MorphOne;
 use Tipi\Translations\Config\TranslationConfig;
 use Tipi\Translations\Contracts\LocaleProvider;
 use Tipi\Translations\Contracts\SharedTableTranslatableModel;
-use Tipi\Translations\Models\TranslationModel;
 use Tipi\Translations\TranslationManager;
 
 /**
@@ -22,11 +21,8 @@ trait HasSharedTableTranslations
 
     public function translationRecords(): MorphMany
     {
-        /** @var TranslationModel $model */
-        $model = resolve(TranslationConfig::class)->translationModel;
-
         return $this->morphMany(
-            $model,
+            resolve(TranslationConfig::class)->translationModel,
             'translatable',
         );
     }
@@ -34,7 +30,7 @@ trait HasSharedTableTranslations
     public function defaultTranslationRecord(): MorphOne
     {
         return $this->morphOne(
-            TranslationModel::class,
+            resolve(TranslationConfig::class)->translationModel,
             'translatable',
         )->where(
             'locale_code',
