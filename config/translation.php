@@ -2,12 +2,22 @@
 
 declare(strict_types=1);
 
-return [
-    'locales' => [
-        'table' => 'locales',
-    ],
+use Tipi\Translations\Contracts\LocaleProvider;
+use Tipi\Translations\Models\TranslationModel;
 
-    'translations' => [
-        'table' => 'translations',
-    ],
+return [
+    /*
+     * The database table used for shared translations.
+     */
+    'translations_table' => 'translations',
+
+    /*
+     * The model used for shared translations.
+     */
+    'translation_model' => TranslationModel::class,
+
+    /*
+     * The locale provider implementation.
+     */
+    'locale_provider' => LocaleProvider::class,
 ];

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tipi\Translations;
 
 use Illuminate\Support\ServiceProvider;
+use Tipi\Translations\Config\TranslationConfig;
 
 final class TranslationServiceProvider extends ServiceProvider
 {
@@ -13,6 +14,17 @@ final class TranslationServiceProvider extends ServiceProvider
         $this->mergeConfigFrom(
             __DIR__.'/../config/translation.php',
             'translation',
+        );
+
+        $this->app->singleton(
+            TranslationConfig::class,
+            fn (): TranslationConfig => new TranslationConfig(
+                translationsTable: (string) config('translation.translations_table'),
+                translationModel: (string) config('translation.translation_model'),
+                localeProvider: resolve(
+                    config('translation.locale_provider'),
+                ),
+            ),
         );
     }
 
