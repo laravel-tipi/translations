@@ -2,9 +2,7 @@
 
 declare(strict_types=1);
 
-use Illuminate\Database\Eloquent\Model;
 use Tipi\Translations\Actions\CreateTranslation;
-use Tipi\Translations\Contracts\TranslatableModel;
 use Tipi\Translations\Tests\Fixtures\Models\DedicatedArticle;
 use Tipi\Translations\Tests\Fixtures\Models\SharedArticle;
 use Tipi\Translations\Tests\Fixtures\Models\SoftDeletingDedicatedArticle;

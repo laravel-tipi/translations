@@ -10,7 +10,6 @@ use Tipi\Translations\Tests\Fixtures\Models\DedicatedArticle;
 use Tipi\Translations\Tests\Fixtures\Models\JsonArticle;
 use Tipi\Translations\Tests\Fixtures\Models\SharedArticle;
 
-
 dataset('translatable models', [
     'dedicated table' => fn () => DedicatedArticle::query()->create(),
     'shared table' => fn () => SharedArticle::query()->create(),
