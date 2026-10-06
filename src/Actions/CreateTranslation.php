@@ -69,7 +69,7 @@ final readonly class CreateTranslation
             translatable: $translatable,
         );
 
-        $localeCode ??= $this->locales->default()->code;
+        $localeCode ??= $this->locales->current()->code;
 
         if ($this->translations->exists(
             translatable: $translatable,
