@@ -29,6 +29,7 @@ final readonly class TranslationManager
 
     /**
      * @return Collection<string, Translation>
+     *
      * @throws JsonException
      */
     public function getAll(
