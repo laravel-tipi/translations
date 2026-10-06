@@ -6,7 +6,7 @@ namespace Tipi\Translations\Contracts;
 
 use Illuminate\Database\Eloquent\Relations\Relation;
 
-interface TableTranslatableModel extends TranslatableModel
+interface TableTranslatableModel extends TranslatableModel, TracksOutdatedTranslations
 {
     public function translationRecords(): Relation;
 }

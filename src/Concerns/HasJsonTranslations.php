@@ -12,5 +12,4 @@ use Illuminate\Database\Eloquent\Model;
 trait HasJsonTranslations
 {
     use HasLocalizedTranslations;
-
 }

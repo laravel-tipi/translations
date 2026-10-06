@@ -2,76 +2,93 @@
 
 declare(strict_types=1);
 
-namespace Tipi\Localization\Translations\Actions;
+namespace Tipi\Translations\Actions;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
+use JsonException;
 use LogicException;
 use Throwable;
-use Tipi\Localization\Translations\Contracts\TranslationModelContract;
+use Tipi\Translations\Contracts\LocaleProvider;
+use Tipi\Translations\Contracts\TranslatableModel;
+use Tipi\Translations\Exceptions\TranslationDoesNotExistException;
+use Tipi\Translations\Translation;
+use Tipi\Translations\TranslationManager;
 
 final readonly class UpdateTranslation
 {
+    public function __construct(
+        private LocaleProvider $locales,
+        private TranslationManager $translations,
+    ) {}
+
     /**
      * @throws Throwable
      */
-    public function execute(TranslationModelContract $translation, array $attributes, bool $markOthersAsOutdated = false, bool $dbTransaction = true): TranslationModelContract
-    {
-        if (! $translation instanceof Model) {
+    public function execute(
+        TranslatableModel $translatable,
+        array $attributes,
+        ?string $localeCode = null,
+        bool $markOthersAsOutdated = false,
+        bool $dbTransaction = true,
+    ): Translation {
+        if (! $translatable instanceof Model) {
             throw new LogicException(
-                'The translation must extend Eloquent Model.',
+                'The translatable must extend Eloquent Model.',
             );
         }
 
         if ($dbTransaction) {
-            /** @var Model&TranslationModelContract $translation */
+            /** @var Model&TranslatableModel $translatable */
             return DB::transaction(
-                fn (): TranslationModelContract => $this->update(
-                    translation: $translation,
+                fn (): Translation => $this->update(
+                    translatable: $translatable,
                     attributes: $attributes,
-                    markOthersAsOutdated: $markOthersAsOutdated
+                    localeCode: $localeCode,
+                    markOthersAsOutdated: $markOthersAsOutdated,
                 ),
             );
         }
 
-        /** @var Model&TranslationModelContract $translation */
+        /** @var Model&TranslatableModel $translatable */
         return $this->update(
-            translation: $translation,
+            translatable: $translatable,
             attributes: $attributes,
-            markOthersAsOutdated: $markOthersAsOutdated
+            localeCode: $localeCode,
+            markOthersAsOutdated: $markOthersAsOutdated,
         );
     }
 
-    private function update(Model&TranslationModelContract $translation, array $attributes, bool $markOthersAsOutdated): TranslationModelContract
-    {
-        $translation = $translation->newQuery()
+    /**
+     * @throws JsonException|Throwable
+     */
+    private function update(
+        Model&TranslatableModel $translatable,
+        array $attributes,
+        ?string $localeCode,
+        bool $markOthersAsOutdated,
+    ): Translation {
+        $translatable = $translatable->newQuery()
             ->lockForUpdate()
-            ->findOrFail($translation->getKey());
+            ->findOrFail($translatable->getKey());
 
-        if (! $translation->canBeUpdated()) {
-            throw new LogicException('This translation cannot be updated.');
+        $localeCode ??= $this->locales->current()->code;
+
+        if (! $this->translations->exists($translatable, $localeCode)) {
+            throw new TranslationDoesNotExistException($localeCode);
         }
 
-        if ($markOthersAsOutdated && ! $translation->isDefault()) {
-            throw new LogicException(
-                'Only the default translation can mark other translations as outdated.',
-            );
-        }
-
-        /** @var Model&TranslationModelContract $translation */
-        $translation->forceFill($attributes);
-        $translation->outdated_at = null;
-        $translation->save();
+        $translation = $this->translations->update(
+            translatable: $translatable,
+            localeCode: $localeCode,
+            attributes: $attributes,
+        );
 
         if ($markOthersAsOutdated) {
-            $parent = $translation->translationParent()
-                ->firstOrFail();
-
-            $parent->translations()
-                ->whereKeyNot($translation->getKey())
-                ->update([
-                    'outdated_at' => now(),
-                ]);
+            $this->translations->markOthersAsOutdated(
+                translatable: $translatable,
+                localeCode: $localeCode,
+            );
         }
 
         return $translation;

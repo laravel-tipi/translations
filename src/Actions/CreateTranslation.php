@@ -2,91 +2,85 @@
 
 declare(strict_types=1);
 
-namespace Tipi\Localization\Translations\Actions;
+namespace Tipi\Translations\Actions;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
+use JsonException;
 use LogicException;
 use Throwable;
-use Tipi\Localization\Exceptions\TranslationAlreadyExistsException;
-use Tipi\Localization\LocaleResolver;
-use Tipi\Localization\Translations\Contracts\TranslatableModel;
-use Tipi\Localization\Translations\Contracts\TranslationModelContract;
+use Tipi\Translations\Contracts\LocaleProvider;
+use Tipi\Translations\Contracts\TranslatableModel;
+use Tipi\Translations\Exceptions\TranslationAlreadyExistsException;
+use Tipi\Translations\Translation;
+use Tipi\Translations\TranslationManager;
 
 final readonly class CreateTranslation
 {
     public function __construct(
-        private LocaleResolver $localeResolver,
-    ) {}
+        private LocaleProvider $locales,
+        private TranslationManager $translations,
+    ) {
+    }
 
     /**
      * @throws Throwable
      */
-    public function execute(TranslatableModel $translatable, array $attributes, ?string $localeCode = null, bool $dbTransaction = true): TranslationModelContract
-    {
-        if (! $parent instanceof Model) {
+    public function execute(
+        TranslatableModel $translatable,
+        array $attributes,
+        ?string $localeCode = null,
+        bool $dbTransaction = true,
+    ): Translation {
+        if (! $translatable instanceof Model) {
             throw new LogicException(
-                'The parent must extend Eloquent Model.',
+                'The translatable must extend Eloquent Model.',
             );
         }
 
         if ($dbTransaction) {
-            /** @var Model&TranslatableModel $parent */
+            /** @var Model&TranslatableModel $translatable */
             return DB::transaction(
-                fn (): TranslationModelContract => $this->create(
-                    parent: $parent,
+                fn (): Translation => $this->create(
+                    translatable: $translatable,
                     attributes: $attributes,
                     localeCode: $localeCode,
                 ),
             );
         }
 
-        /** @var Model&TranslatableModel $parent */
+        /** @var Model&TranslatableModel $translatable */
         return $this->create(
-            parent: $parent,
+            translatable: $translatable,
             attributes: $attributes,
             localeCode: $localeCode,
         );
     }
 
     /**
-     * TODO: add a boolean allowing user to decide if the $parent should be locked, or even queried.
-     * TODO: consider changing variable name from $parent to $translatable.
-     * TODO: also allow $parent to be integer or string as well (so it works for every primary key).
+     * @throws JsonException
      */
-    /// TODO:
-    private function create(Model&TranslatableModel $parent, array $attributes, ?string $localeCode): TranslationModelContract
-    {
-        $parent = $parent->newQuery()
+    private function create(
+        Model&TranslatableModel $translatable,
+        array $attributes,
+        ?string $localeCode,
+    ): Translation {
+        $translatable = $translatable->newQuery()
             ->lockForUpdate()
-            ->findOrFail($parent->getKey());
+            ->findOrFail($translatable->getKey());
 
-        $locale = $localeCode === null
-            ? $this->localeResolver->getDefaultLocale()
-            : $this->localeResolver->getSupportedLocale($localeCode);
+        $localeCode ??= $this->locales->default()->code;
 
-        if ($parent->translationExistsForLocale($locale->getKey())) {
+        if ($this->translations->exists($translatable, $localeCode)) {
             throw new TranslationAlreadyExistsException(
-                code: $locale->code,
+                code: $localeCode,
             );
         }
 
-        $translationModelClass = $parent::getTranslationModelClass();
-
-        /** @var Model&TranslationModelContract $translation */
-        $translation = new $translationModelClass;
-
-        $translation->forceFill([
-            ...$attributes,
-            'locale_code' => $locale->getKey(),
-        ]);
-
-        $translation
-            ->translationParent()
-            ->associate($parent);
-
-        $translation->save();
-
-        return $translation;
+        return $this->translations->create(
+            translatable: $translatable,
+            localeCode: $localeCode,
+            attributes: $attributes,
+        );
     }
 }

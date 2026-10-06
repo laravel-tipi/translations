@@ -6,7 +6,7 @@ namespace Tipi\Translations;
 
 use Illuminate\Support\ServiceProvider;
 
-final class TranslationsServiceProvider extends ServiceProvider
+final class TranslationServiceProvider extends ServiceProvider
 {
     public function register(): void
     {

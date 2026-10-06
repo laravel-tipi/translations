@@ -18,6 +18,7 @@ return new class extends Migration
             $table->string('field_name');
             $table->text('field_value')->nullable();
 
+            $table->timestamp('outdated_at')->nullable();
             $table->timestamps();
 
             $table->unique([

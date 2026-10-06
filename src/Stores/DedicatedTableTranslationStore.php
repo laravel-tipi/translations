@@ -104,6 +104,17 @@ final readonly class DedicatedTableTranslationStore
         );
     }
 
+    public function markOthersAsOutdated(
+        Model&DedicatedTableTranslatableModel $translatable,
+        string $localeCode,
+    ): void {
+        $translatable->translationRecords()
+            ->where('locale_code', '!=', $localeCode)
+            ->update([
+                'outdated_at' => now(),
+            ]);
+    }
+
     /**
      * @throws Throwable
      */

@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace Tipi\Translations;
 
 use Illuminate\Database\Eloquent\Model;
+use JsonException;
 use LogicException;
+use Throwable;
 use Tipi\Translations\Contracts\DedicatedTableTranslatableModel;
 use Tipi\Translations\Contracts\JsonTranslatableModel;
 use Tipi\Translations\Contracts\SharedTableTranslatableModel;
+use Tipi\Translations\Contracts\TracksOutdatedTranslations;
 use Tipi\Translations\Contracts\TranslatableModel;
 use Tipi\Translations\Stores\DedicatedTableTranslationStore;
 use Tipi\Translations\Stores\JsonTranslationStore;
@@ -20,8 +23,7 @@ final readonly class TranslationManager
         private JsonTranslationStore $jsonStore,
         private DedicatedTableTranslationStore $dedicatedTableStore,
         private SharedTableTranslationStore $sharedTableStore,
-    ) {
-    }
+    ) {}
 
     public function get(
         Model&TranslatableModel $translatable,
@@ -38,6 +40,46 @@ final readonly class TranslationManager
         string $localeCode,
     ): bool {
         return $this->store($translatable)->exists(
+            translatable: $translatable,
+            localeCode: $localeCode,
+        );
+    }
+
+    /**
+     * @throws JsonException
+     */
+    public function create(
+        Model&TranslatableModel $translatable,
+        string $localeCode,
+        array $attributes,
+    ): Translation {
+        return $this->store($translatable)->create(
+            translatable: $translatable,
+            localeCode: $localeCode,
+            attributes: $attributes,
+        );
+    }
+
+    /**
+     * @throws JsonException|Throwable
+     */
+    public function update(
+        Model&TranslatableModel $translatable,
+        string $localeCode,
+        array $attributes,
+    ): Translation {
+        return $this->store($translatable)->update(
+            translatable: $translatable,
+            localeCode: $localeCode,
+            attributes: $attributes,
+        );
+    }
+
+    public function markOthersAsOutdated(
+        Model&TranslatableModel&TracksOutdatedTranslations $translatable,
+        string $localeCode,
+    ): void {
+        $this->store($translatable)->markOthersAsOutdated(
             translatable: $translatable,
             localeCode: $localeCode,
         );

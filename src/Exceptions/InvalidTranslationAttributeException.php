@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace Tipi\Translations\Exceptions;
 
-use LogicException;
-
-final class InvalidTranslationAttributeException extends LogicException
+final class InvalidTranslationAttributeException extends TranslationConfigurationException
 {
     /**
      * @param array<int, string> $attributes

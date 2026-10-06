@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace Tipi\Translations\Exceptions;
 
-use RuntimeException;
-
-final class TranslationAlreadyExistsException extends RuntimeException
+final class TranslationAlreadyExistsException extends TranslationException
 {
     public function __construct(string $code)
     {
