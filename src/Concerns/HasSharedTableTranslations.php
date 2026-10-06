@@ -6,6 +6,7 @@ namespace Tipi\Translations\Concerns;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
+use Illuminate\Database\Eloquent\Relations\MorphOne;
 use Tipi\Translations\Contracts\LocaleProvider;
 use Tipi\Translations\Contracts\SharedTableTranslatableModel;
 use Tipi\Translations\Models\TranslationModel;
@@ -26,6 +27,17 @@ trait HasSharedTableTranslations
         );
     }
 
+    public function defaultTranslationRecord(): MorphOne
+    {
+        return $this->morphOne(
+            TranslationModel::class,
+            'translatable',
+        )->where(
+            'locale_code',
+            resolve(LocaleProvider::class)->default()->code,
+        );
+    }
+
     public static function bootHasSharedTableTranslations(): void
     {
         static::deleting(function (Model $model): void {
@@ -38,17 +50,6 @@ trait HasSharedTableTranslations
 
             $model->translationRecords()->delete();
         });
-    }
-
-    public function defaultTranslationRecords(): MorphMany
-    {
-        return $this->morphMany(
-            TranslationModel::class,
-            'translatable',
-        )->where(
-            'locale_code',
-            resolve(LocaleProvider::class)->default()->code,
-        );
     }
 
     public function translationExists(?string $localeCode = null): bool

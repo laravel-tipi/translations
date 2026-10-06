@@ -15,20 +15,12 @@ return new class extends Migration
             $table->unsignedBigInteger('translatable_id');
 
             $table->string('locale_code');
-            $table->string('field_name');
-            $table->text('field_value')->nullable();
+            $table->json('values');
 
             $table->timestamp('outdated_at')->nullable();
             $table->timestamps();
 
             $table->unique([
-                'translatable_type',
-                'translatable_id',
-                'locale_code',
-                'field_name',
-            ]);
-
-            $table->index([
                 'translatable_type',
                 'translatable_id',
                 'locale_code',

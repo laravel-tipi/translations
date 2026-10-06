@@ -43,7 +43,7 @@ trait IsTranslation
     public function translatable(): BelongsTo
     {
         return $this->belongsTo(
-            static::getTranslationParentModelClass(),
+            static::getTranslatableModelClass(),
             static::translationParentForeignKey(),
         );
     }
@@ -81,7 +81,7 @@ trait IsTranslation
 
     protected static function translationParentForeignKey(): string
     {
-        $model = static::getTranslationParentModelClass();
+        $model = static::getTranslatableModelClass();
 
         return (new $model)->getForeignKey();
     }

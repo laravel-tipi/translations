@@ -6,9 +6,8 @@ namespace Tipi\Translations\Stores;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
-use Throwable;
 use Tipi\Translations\Contracts\SharedTableTranslatableModel;
-use Tipi\Translations\Contracts\TranslationModelContract;
+use Tipi\Translations\Models\TranslationModel;
 use Tipi\Translations\Translation;
 
 class SharedTableTranslationStore
@@ -17,18 +16,18 @@ class SharedTableTranslationStore
         Model&SharedTableTranslatableModel $translatable,
         string $localeCode,
     ): ?Translation {
-        $translations = $translatable->translationRecords()
+        /** @var TranslationModel|null $translation */
+        $translation = $translatable->translationRecords()
             ->where('locale_code', $localeCode)
-            ->get();
+            ->first();
 
-        if ($translations->isEmpty()) {
+        if ($translation === null) {
             return null;
         }
 
         return $this->toTranslation(
             translatable: $translatable,
-            localeCode: $localeCode,
-            translations: $translations,
+            translation: $translation,
         );
     }
 
@@ -40,15 +39,12 @@ class SharedTableTranslationStore
     ): Collection {
         return $translatable->translationRecords()
             ->get()
-            ->groupBy('locale_code')
             ->map(
-                fn (Collection $translations, string $localeCode): Translation => $this->toTranslation(
+                fn (TranslationModel $translation): Translation => $this->toTranslation(
                     translatable: $translatable,
-                    localeCode: $localeCode,
-                    translations: $translations,
+                    translation: $translation,
                 ),
-            )
-            ->values();
+            );
     }
 
     public function exists(
@@ -65,39 +61,40 @@ class SharedTableTranslationStore
         string $localeCode,
         array $attributes,
     ): Translation {
-        foreach ($attributes as $field => $value) {
-            $translatable->translationRecords()->create([
-                'locale_code' => $localeCode,
-                'field_name' => $field,
-                'field_value' => $value,
-            ]);
-        }
+        /** @var TranslationModel $translation */
+        $translation = $translatable->translationRecords()->create([
+            'locale_code' => $localeCode,
+            'values' => $attributes,
+        ]);
 
-        return $this->get($translatable, $localeCode);
+        return $this->toTranslation(
+            translatable: $translatable,
+            translation: $translation,
+        );
     }
 
-    /**
-     * @throws Throwable
-     */
     public function update(
         Model&SharedTableTranslatableModel $translatable,
         string $localeCode,
         array $attributes,
     ): Translation {
-        foreach ($attributes as $field => $value) {
-            $translatable->translationRecords()->updateOrCreate(
-                [
-                    'locale_code' => $localeCode,
-                    'field_name' => $field,
-                ],
-                [
-                    'field_value' => $value,
-                    'outdated_at' => null,
-                ],
-            );
-        }
+        /** @var TranslationModel $translation */
+        $translation = $translatable->translationRecords()
+            ->where('locale_code', $localeCode)
+            ->firstOrFail();
 
-        return $this->get($translatable, $localeCode);
+        $translation->update([
+            'values' => array_merge(
+                $translation->values,
+                $attributes,
+            ),
+            'outdated_at' => null,
+        ]);
+
+        return $this->toTranslation(
+            translatable: $translatable,
+            translation: $translation,
+        );
     }
 
     public function markOthersAsOutdated(
@@ -111,14 +108,10 @@ class SharedTableTranslationStore
             ]);
     }
 
-    /**
-     * @throws Throwable
-     */
     public function delete(
         Model&SharedTableTranslatableModel $translatable,
         string $localeCode,
     ): void {
-        /** @var Model&TranslationModelContract $translation */
         $translatable->translationRecords()
             ->where('locale_code', $localeCode)
             ->delete();
@@ -126,15 +119,12 @@ class SharedTableTranslationStore
 
     private function toTranslation(
         Model&SharedTableTranslatableModel $translatable,
-        string $localeCode,
-        Collection $translations,
+        TranslationModel $translation,
     ): Translation {
         return new Translation(
             translatable: $translatable,
-            localeCode: $localeCode,
-            attributes: $translations
-                ->pluck('field_value', 'field_name')
-                ->all(),
+            localeCode: $translation->locale_code,
+            attributes: $translation->values,
         );
     }
 }

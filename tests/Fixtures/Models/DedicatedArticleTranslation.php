@@ -11,5 +11,4 @@ use Tipi\Translations\Contracts\TranslationModelContract;
 final class DedicatedArticleTranslation extends Model implements TranslationModelContract
 {
     use IsTranslation;
-    // translation model implementation
 }
