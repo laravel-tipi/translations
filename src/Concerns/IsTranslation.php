@@ -26,7 +26,7 @@ trait IsTranslation
         ]);
     }
 
-    public static function getTranslationParentModelClass(): string
+    public static function getTranslatableModelClass(): string
     {
         if (static::$translationParentModel !== null) {
             return static::$translationParentModel;
@@ -40,7 +40,7 @@ trait IsTranslation
     /**
      * @return BelongsTo<TParent, $this>
      */
-    public function translationParent(): BelongsTo
+    public function translatable(): BelongsTo
     {
         return $this->belongsTo(
             static::getTranslationParentModelClass(),

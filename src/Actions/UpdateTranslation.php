@@ -81,12 +81,6 @@ final readonly class UpdateTranslation
             );
         }
 
-        if (! $this->translations->exists($translatable, $localeCode)) {
-            throw new TranslationDoesNotExistException(
-                code: $localeCode,
-            );
-        }
-
         if ($markOthersAsOutdated) {
             if (! $translatable instanceof TracksOutdatedTranslations) {
                 throw new LogicException(sprintf(
