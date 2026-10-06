@@ -1,8 +1,15 @@
 {
     "name": "laravel-tipi/translations",
-    "description": "Flexible package for Model translations",
+    "description": "Flexible Eloquent model translations for Laravel with dedicated-table, shared-table, and JSON storage.",
     "type": "library",
     "license": "MIT",
+    "keywords": [
+        "laravel",
+        "localization",
+        "translations",
+        "eloquent",
+        "i18n"
+    ],
     "authors": [
         {
             "name": "Irakli",
