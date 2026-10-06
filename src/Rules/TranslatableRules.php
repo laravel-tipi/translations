@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Tipi\Translations\Rules;
 
 use Illuminate\Database\Eloquent\Model;
-use Tipi\Translations\Support\ArrayHelper;
+use Tipi\Support\Arr\ArrayHelper;
 
 abstract class TranslatableRules
 {
