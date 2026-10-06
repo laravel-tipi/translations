@@ -1,8 +1,6 @@
 {
     "name": "laravel-tipi/translations",
     "description": "Flexible Eloquent model translations for Laravel with dedicated-table, shared-table, and JSON storage.",
-    "type": "library",
-    "license": "MIT",
     "keywords": [
         "laravel",
         "localization",
@@ -10,6 +8,8 @@
         "eloquent",
         "i18n"
     ],
+    "type": "library",
+    "license": "MIT",
     "authors": [
         {
             "name": "Irakli",
@@ -57,7 +57,7 @@
     "config": {
         "sort-packages": true,
         "allow-plugins": {
-            "pestphp/pest-plugin": false
+            "pestphp/pest-plugin": true
         }
     },
     "support": {
