@@ -11,10 +11,11 @@ final readonly class TranslationConfig
 {
     /**
      * @param  class-string<TranslationModel>  $translationModel
+     * @param  class-string<LocaleProvider>  $localeProvider
      */
     public function __construct(
         public string $translationsTable,
         public string $translationModel,
-        public LocaleProvider $localeProvider,
+        public string $localeProvider,
     ) {}
 }

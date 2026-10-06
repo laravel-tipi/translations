@@ -22,16 +22,14 @@ final class TranslationServiceProvider extends ServiceProvider
             fn (): TranslationConfig => new TranslationConfig(
                 translationsTable: (string) config('translation.translations_table'),
                 translationModel: (string) config('translation.translation_model'),
-                localeProvider: resolve(
-                    config('translation.locale_provider'),
-                ),
+                localeProvider: (string) config('translation.locale_provider'),
             ),
         );
 
         $this->app->singleton(
             LocaleProvider::class,
             fn (): LocaleProvider => resolve(
-                config('translation.locale_provider'),
+                resolve(TranslationConfig::class)->localeProvider,
             ),
         );
     }
