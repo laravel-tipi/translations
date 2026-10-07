@@ -13,9 +13,7 @@ interface TranslatableModel
      * @return array<int, string>
      */
     public static function getTranslatableAttributes(): array;
-
-    public function getAttribute($key): mixed;
-
+    
     public function translated(string $attribute, mixed $default = null, ?string $localeCode = null): mixed;
 
     public function getTranslation(?string $localeCode = null): ?Translation;
