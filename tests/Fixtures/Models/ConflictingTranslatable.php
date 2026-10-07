@@ -9,9 +9,7 @@ use Tipi\Translations\Concerns\HasSharedTableTranslations;
 use Tipi\Translations\Contracts\JsonTranslatableModel;
 use Tipi\Translations\Contracts\SharedTableTranslatableModel;
 
-final class ConflictingTranslatable extends Model implements
-    JsonTranslatableModel,
-    SharedTableTranslatableModel
+final class ConflictingTranslatable extends Model implements JsonTranslatableModel, SharedTableTranslatableModel
 {
     use HasSharedTableTranslations;
 

@@ -9,9 +9,7 @@ use Tipi\Translations\Concerns\HasDedicatedTableTranslations;
 use Tipi\Translations\Contracts\DedicatedTableTranslatableModel;
 use Tipi\Translations\Contracts\SharedTableTranslatableModel;
 
-final class ConflictingOutdatedTrackingTranslatable extends Model implements
-    DedicatedTableTranslatableModel,
-    SharedTableTranslatableModel
+final class ConflictingOutdatedTrackingTranslatable extends Model implements DedicatedTableTranslatableModel, SharedTableTranslatableModel
 {
     use HasDedicatedTableTranslations;
 
