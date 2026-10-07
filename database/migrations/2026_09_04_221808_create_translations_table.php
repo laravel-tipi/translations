@@ -25,11 +25,14 @@ return new class extends Migration
                 $table->timestamp('outdated_at')->nullable();
                 $table->timestamps();
 
-                $table->unique([
-                    'translatable_type',
-                    'translatable_id',
-                    'locale_code',
-                ]);
+                $table->unique(
+                    [
+                        'translatable_type',
+                        'translatable_id',
+                        'locale_code',
+                    ],
+                    'translations_owner_locale_unique',
+                );
             });
     }
 
