@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Tipi\Translations\Actions\CreateTranslation;
 use Tipi\Translations\Actions\DeleteTranslation;
 use Tipi\Translations\Contracts\TranslatableModel;
@@ -127,4 +128,148 @@ it('keeps the json model synchronized after deleting a translation', function ()
     resolve(FakeLocaleProvider::class)->setCurrent('ka');
 
     expect($article->title)->toBeNull();
+});
+
+it('deleting a json translation preserves all other locales', function (): void {
+    $article = JsonArticle::query()->create();
+
+    $create = resolve(CreateTranslation::class);
+
+    $create->execute(
+        $article,
+        [
+            'title' => 'English',
+            'description' => 'English description',
+        ],
+        'en',
+    );
+
+    $create->execute(
+        $article,
+        [
+            'title' => 'ქართული',
+            'description' => 'ქართული აღწერა',
+        ],
+        'ka',
+    );
+
+    resolve(DeleteTranslation::class)->execute(
+        $article,
+        'ka',
+    );
+
+    $article->refresh();
+
+    expect($article->getAttributeValue('title'))->toBe([
+        'en' => 'English',
+    ])->and($article->getAttributeValue('description'))->toBe([
+        'en' => 'English description',
+    ]);
+});
+
+it('does not overwrite newer json translations when deleting from a stale model', function (): void {
+    $article = JsonArticle::query()->create();
+
+    $create = resolve(CreateTranslation::class);
+
+    $create->execute($article, ['title' => 'English'], 'en');
+    $create->execute($article, ['title' => 'ქართული'], 'ka');
+
+    $stale = JsonArticle::query()->findOrFail($article->getKey());
+
+    $create->execute(
+        $article,
+        ['title' => 'Deutsch'],
+        'de',
+    );
+
+    resolve(DeleteTranslation::class)->execute(
+        $stale,
+        'ka',
+    );
+
+    expect(
+        $article->fresh()->getAttributeValue('title'),
+    )->toBe([
+        'en' => 'English',
+        'de' => 'Deutsch',
+    ]);
+});
+
+it('fails when the persisted translatable was deleted before translation creation', function (): void {
+    $article = JsonArticle::query()->create();
+
+    $stale = JsonArticle::query()->findOrFail($article->getKey());
+
+    $article->delete();
+
+    resolve(CreateTranslation::class)->execute(
+        $stale,
+        ['title' => 'English'],
+        'en',
+    );
+})->throws(ModelNotFoundException::class);
+
+it('rolls back translation deletion with the surrounding transaction', function (
+    Model&TranslatableModel $article,
+): void {
+    $article->save();
+
+    resolve(CreateTranslation::class)->execute(
+        translatable: $article,
+        attributes: [
+            'title' => 'English',
+        ],
+        localeCode: 'en',
+    );
+
+    try {
+        DB::transaction(function () use ($article): void {
+            resolve(DeleteTranslation::class)->execute(
+                translatable: $article,
+                localeCode: 'en',
+                dbTransaction: false,
+            );
+
+            throw new RuntimeException('Rollback');
+        });
+    } catch (RuntimeException) {
+        //
+    }
+
+    $article = $article->fresh();
+
+    $translation = $article?->getTranslation('en');
+
+    expect($article?->translationExists('en'))->toBeTrue()
+        ->and($translation)->not->toBeNull()
+        ->and($translation->attributes['title'])
+        ->toBe('English');
+
+})->with('translatable models');
+
+it('completely removes the last json translation for a locale', function (): void {
+    $article = JsonArticle::query()->create();
+
+    resolve(CreateTranslation::class)->execute(
+        translatable: $article,
+        attributes: [
+            'title' => 'ქართული',
+            'description' => 'ქართული აღწერა',
+        ],
+        localeCode: 'ka',
+    );
+
+    resolve(DeleteTranslation::class)->execute(
+        translatable: $article,
+        localeCode: 'ka',
+    );
+
+    $article->refresh();
+
+    expect($article->translationExists('ka'))->toBeFalse()
+        ->and($article->getTranslation('ka'))->toBeNull()
+        ->and($article->getTranslations())->toBeEmpty()
+        ->and($article->getAttributeValue('title'))->toBe([])
+        ->and($article->getAttributeValue('description'))->toBe([]);
 });

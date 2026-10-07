@@ -59,3 +59,72 @@ it('returns translated attributes for the current locale', function (
 
     expect($article->title)->toBe('ქართული სათაური');
 })->with('translatable models');
+
+it('considers an explicitly null json value to be an existing translation', function (): void {
+    $article = JsonArticle::query()->create();
+
+    resolve(CreateTranslation::class)->execute(
+        translatable: $article,
+        attributes: [
+            'title' => null,
+        ],
+        localeCode: 'en',
+    );
+
+    expect($article->translationExists('en'))->toBeTrue()
+        ->and($article->getTranslation('en')?->attributes)
+        ->toBe([
+            'title' => null,
+        ]);
+});
+
+it('considers an empty string json value to be an existing translation', function (): void {
+    $article = JsonArticle::query()->create();
+
+    resolve(CreateTranslation::class)->execute(
+        translatable: $article,
+        attributes: [
+            'title' => '',
+        ],
+        localeCode: 'en',
+    );
+
+    expect($article->translationExists('en'))->toBeTrue()
+        ->and($article->getTranslation('en')?->attributes)
+        ->toBe([
+            'title' => '',
+        ]);
+});
+
+it('returns sparse json translations without inventing missing attributes', function (): void {
+    $article = JsonArticle::query()->create();
+
+    $article->setAttribute('title', [
+        'en' => 'English',
+        'ka' => 'ქართული',
+    ]);
+
+    $article->setAttribute('description', [
+        'en' => 'English description',
+        'de' => 'Deutsche Beschreibung',
+    ]);
+
+    $article->save();
+
+    $translations = $article->getTranslations()
+        ->keyBy(
+            fn ($translation) => $translation->localeCode,
+        );
+
+    expect($translations)->toHaveCount(3)
+        ->and($translations['en']->attributes)->toBe([
+            'title' => 'English',
+            'description' => 'English description',
+        ])
+        ->and($translations['ka']->attributes)->toBe([
+            'title' => 'ქართული',
+        ])
+        ->and($translations['de']->attributes)->toBe([
+            'description' => 'Deutsche Beschreibung',
+        ]);
+});

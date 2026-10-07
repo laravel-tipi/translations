@@ -6,7 +6,6 @@ namespace Tipi\Translations;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
-use JsonException;
 use LogicException;
 use Throwable;
 use Tipi\Translations\Contracts\DedicatedTableTranslatableModel;
@@ -14,7 +13,9 @@ use Tipi\Translations\Contracts\JsonTranslatableModel;
 use Tipi\Translations\Contracts\SharedTableTranslatableModel;
 use Tipi\Translations\Contracts\TracksOutdatedTranslations;
 use Tipi\Translations\Contracts\TranslatableModel;
+use Tipi\Translations\Exceptions\EmptyTranslationException;
 use Tipi\Translations\Exceptions\InvalidTranslationAttributeException;
+use Tipi\Translations\Exceptions\InvalidTranslationConfigurationException;
 use Tipi\Translations\Stores\DedicatedTableTranslationStore;
 use Tipi\Translations\Stores\JsonTranslationStore;
 use Tipi\Translations\Stores\SharedTableTranslationStore;
@@ -29,8 +30,6 @@ final readonly class TranslationManager
 
     /**
      * @return Collection<string, Translation>
-     *
-     * @throws JsonException
      */
     public function getAll(
         Model&TranslatableModel $translatable,
@@ -40,9 +39,6 @@ final readonly class TranslationManager
         );
     }
 
-    /**
-     * @throws JsonException
-     */
     public function get(
         Model&TranslatableModel $translatable,
         string $localeCode,
@@ -53,9 +49,6 @@ final readonly class TranslationManager
         );
     }
 
-    /**
-     * @throws JsonException
-     */
     public function exists(
         Model&TranslatableModel $translatable,
         string $localeCode,
@@ -66,20 +59,21 @@ final readonly class TranslationManager
         );
     }
 
-    /**
-     * @throws JsonException
-     */
     public function create(
         Model&TranslatableModel $translatable,
         string $localeCode,
         array $attributes,
     ): Translation {
+        $store = $this->store($translatable);
+
+        $this->ensureCanCreateTranslation($translatable);
+
         $this->validateAttributes(
             translatable: $translatable,
             attributes: $attributes,
         );
 
-        return $this->store($translatable)->create(
+        return $store->create(
             translatable: $translatable,
             localeCode: $localeCode,
             attributes: $attributes,
@@ -87,7 +81,7 @@ final readonly class TranslationManager
     }
 
     /**
-     * @throws JsonException|Throwable
+     * @throws Throwable
      */
     public function update(
         Model&TranslatableModel $translatable,
@@ -107,7 +101,7 @@ final readonly class TranslationManager
     }
 
     /**
-     * @throws JsonException|Throwable
+     * @throws Throwable
      */
     public function delete(
         Model&TranslatableModel $translatable,
@@ -132,27 +126,56 @@ final readonly class TranslationManager
     private function store(
         Model&TranslatableModel $translatable,
     ): DedicatedTableTranslationStore|JsonTranslationStore|SharedTableTranslationStore {
-        return match (true) {
-            $translatable instanceof JsonTranslatableModel => $this->jsonStore,
-            $translatable instanceof DedicatedTableTranslatableModel => $this->dedicatedTableStore,
-            $translatable instanceof SharedTableTranslatableModel => $this->sharedTableStore,
-            default => throw new LogicException(sprintf(
-                'Translatable model [%s] does not define a supported translation storage strategy.',
-                $translatable::class,
-            )),
+        $strategies = array_filter([
+            'json' => $translatable instanceof JsonTranslatableModel,
+            'dedicated' => $translatable instanceof DedicatedTableTranslatableModel,
+            'shared' => $translatable instanceof SharedTableTranslatableModel,
+        ]);
+
+        if ($strategies === []) {
+            throw InvalidTranslationConfigurationException::missingStorageStrategy(
+                model: $translatable,
+            );
+        }
+
+        if (count($strategies) > 1) {
+            throw InvalidTranslationConfigurationException::multipleStorageStrategies(
+                model: $translatable,
+            );
+        }
+
+        return match (array_key_first($strategies)) {
+            'json' => $this->jsonStore,
+            'dedicated' => $this->dedicatedTableStore,
+            'shared' => $this->sharedTableStore,
         };
     }
 
     private function outdatedTrackingStore(
         Model&TracksOutdatedTranslations $translatable,
     ): DedicatedTableTranslationStore|SharedTableTranslationStore {
-        return match (true) {
-            $translatable instanceof DedicatedTableTranslatableModel => $this->dedicatedTableStore,
-            $translatable instanceof SharedTableTranslatableModel => $this->sharedTableStore,
-            default => throw new LogicException(sprintf(
+        $strategies = array_filter([
+            'dedicated' => $translatable instanceof DedicatedTableTranslatableModel,
+            'shared' => $translatable instanceof SharedTableTranslatableModel,
+        ]);
+
+        if ($strategies === []) {
+            throw new LogicException(sprintf(
                 'Translatable model [%s] does not support outdated translation tracking.',
                 $translatable::class,
-            )),
+            ));
+        }
+
+        if (count($strategies) > 1) {
+            /** @var Model&TranslatableModel $translatable */
+            throw InvalidTranslationConfigurationException::multipleStorageStrategies(
+                model: $translatable,
+            );
+        }
+
+        return match (array_key_first($strategies)) {
+            'dedicated' => $this->dedicatedTableStore,
+            'shared' => $this->sharedTableStore,
         };
     }
 
@@ -160,6 +183,10 @@ final readonly class TranslationManager
         Model&TranslatableModel $translatable,
         array $attributes,
     ): void {
+        if ($attributes === []) {
+            throw EmptyTranslationException::create();
+        }
+
         $invalidAttributes = array_diff(
             array_keys($attributes),
             $translatable::getTranslatableAttributes(),
@@ -169,6 +196,22 @@ final readonly class TranslationManager
             throw InvalidTranslationAttributeException::forAttributes(
                 model: $translatable::class,
                 attributes: array_values($invalidAttributes),
+            );
+        }
+    }
+
+    private function ensureCanCreateTranslation(
+        Model&TranslatableModel $translatable,
+    ): void {
+        if (
+            ! $translatable->exists
+            && (
+                $translatable instanceof DedicatedTableTranslatableModel
+                || $translatable instanceof SharedTableTranslatableModel
+            )
+        ) {
+            throw new LogicException(
+                'Translations using table storage require the translatable model to be persisted.',
             );
         }
     }

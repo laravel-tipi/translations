@@ -86,6 +86,8 @@ final readonly class JsonTranslationStore
         string $localeCode,
         array $attributes,
     ): Translation {
+        $shouldPersist = $translatable->exists;
+
         foreach ($attributes as $attribute => $value) {
             $translations = $this->translations(
                 translatable: $translatable,
@@ -100,7 +102,9 @@ final readonly class JsonTranslationStore
             );
         }
 
-        $translatable->save();
+        if ($shouldPersist) {
+            $this->persist($translatable);
+        }
 
         return new Translation(
             translatable: $translatable,
@@ -128,7 +132,7 @@ final readonly class JsonTranslationStore
             );
         }
 
-        $translatable->save();
+        $this->persist($translatable);
 
         return $this->get(
             translatable: $translatable,
@@ -154,12 +158,11 @@ final readonly class JsonTranslationStore
             );
         }
 
-        $translatable->save();
+        $this->persist($translatable);
     }
 
     /**
      * @return array<string, mixed>
-     *
      */
     private function attributes(
         Model&JsonTranslatableModel $translatable,
@@ -189,5 +192,34 @@ final readonly class JsonTranslationStore
         string $attribute,
     ): array {
         return $translatable->getAttributeValue($attribute) ?? [];
+    }
+
+    private function persist(
+        Model&JsonTranslatableModel $translatable,
+    ): void {
+        $attributes = [];
+
+        foreach ($translatable::getTranslatableAttributes() as $attribute) {
+            if ($translatable->isDirty($attribute)) {
+                $attributes[$attribute] = $translatable->getAttributeValue($attribute);
+            }
+        }
+
+        if ($attributes === []) {
+            return;
+        }
+
+        $model = $translatable->newQuery()
+            ->findOrFail($translatable->getKey());
+
+        foreach ($attributes as $attribute => $value) {
+            $model->setAttribute($attribute, $value);
+        }
+
+        $model->save();
+
+        $translatable->syncOriginalAttributes(
+            array_keys($attributes),
+        );
     }
 }

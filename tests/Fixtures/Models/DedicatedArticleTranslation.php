@@ -11,4 +11,11 @@ use Tipi\Translations\Contracts\TranslationModelContract;
 final class DedicatedArticleTranslation extends Model implements TranslationModelContract
 {
     use IsTranslation;
+
+    protected function casts(): array
+    {
+        return [
+            'description' => 'array',
+        ];
+    }
 }

@@ -22,9 +22,25 @@ final class LockTranslatable
             ->lockForUpdate()
             ->findOrFail($translatable->getKey());
 
+        $attributes = $translatable->getAttributes();
+        $translationAttributes = [];
+
+        foreach ($translatable::getTranslatableAttributes() as $attribute) {
+            if (! array_key_exists($attribute, $locked->getAttributes())) {
+                continue;
+            }
+
+            $attributes[$attribute] = $locked->getRawOriginal($attribute);
+            $translationAttributes[] = $attribute;
+        }
+
         $translatable->setRawAttributes(
-            $locked->getAttributes(),
-            true,
+            $attributes,
+            sync: false,
+        );
+
+        $translatable->syncOriginalAttributes(
+            $translationAttributes,
         );
 
         return $translatable;

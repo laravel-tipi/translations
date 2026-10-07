@@ -38,6 +38,7 @@ trait CreatesTestSchema
 
         Schema::create('json_articles', function (Blueprint $table): void {
             $table->id();
+            $table->string('slug')->nullable();
             $table->json('title')->nullable();
             $table->json('description')->nullable();
             $table->timestamps();
