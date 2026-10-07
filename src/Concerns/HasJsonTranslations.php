@@ -12,4 +12,14 @@ use Illuminate\Database\Eloquent\Model;
 trait HasJsonTranslations
 {
     use HasLocalizedTranslations;
+
+    public function initializeHasJsonTranslations(): void
+    {
+        $this->mergeCasts(
+            array_fill_keys(
+                static::getTranslatableAttributes(),
+                'array',
+            ),
+        );
+    }
 }

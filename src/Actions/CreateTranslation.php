@@ -65,9 +65,11 @@ final readonly class CreateTranslation
         array $attributes,
         ?string $localeCode,
     ): Translation {
-        $translatable = $this->lockTranslatable->execute(
-            translatable: $translatable,
-        );
+        if ($translatable->exists) {
+            $translatable = $this->lockTranslatable->execute(
+                translatable: $translatable,
+            );
+        }
 
         $localeCode ??= $this->locales->current()->code;
 
