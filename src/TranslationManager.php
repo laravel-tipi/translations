@@ -88,12 +88,14 @@ final readonly class TranslationManager
         string $localeCode,
         array $attributes,
     ): Translation {
+        $store = $this->store($translatable);
+
         $this->validateAttributes(
             translatable: $translatable,
             attributes: $attributes,
         );
 
-        return $this->store($translatable)->update(
+        return $store->update(
             translatable: $translatable,
             localeCode: $localeCode,
             attributes: $attributes,
