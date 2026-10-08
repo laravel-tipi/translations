@@ -14,6 +14,7 @@ use Tipi\Translations\Tests\Fixtures\Models\DedicatedArticle;
 use Tipi\Translations\Tests\Fixtures\Models\JsonArticle;
 use Tipi\Translations\Tests\Fixtures\Models\SharedArticle;
 use Tipi\Translations\TranslationManager;
+use Tipi\Translations\TranslationStateManager;
 
 dataset('translatable models', [
     'dedicated table' => fn () => DedicatedArticle::query()->create(),
@@ -44,6 +45,28 @@ it('deletes a translation', function (
             localeCode: 'ka',
         ),
     )->toBeFalse();
+})->with('translatable models');
+
+it('deletes the translation state with the translation', function (
+    Model&TranslatableModel $article,
+): void {
+    resolve(CreateTranslation::class)->execute(
+        translatable: $article,
+        attributes: ['title' => 'Secondary title'],
+        localeCode: 'ka',
+    );
+
+    resolve(DeleteTranslation::class)->execute(
+        translatable: $article,
+        localeCode: 'ka',
+    );
+
+    expect(
+        resolve(TranslationStateManager::class)->get(
+            translatable: $article,
+            localeCode: 'ka',
+        ),
+    )->toBeNull();
 })->with('translatable models');
 
 it('uses the current locale when locale is not provided', function (
