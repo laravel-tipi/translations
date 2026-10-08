@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Tipi\Translations\Contracts\LocaleProvider;
-use Tipi\Translations\Contracts\TranslationModelContract;
+use Tipi\Translations\Contracts\TranslationModel;
 
 /**
  * @mixin Model
@@ -18,7 +18,7 @@ trait HasDedicatedTableTranslations
     use HasLocalizedTranslations;
 
     /**
-     * @return class-string<Model&TranslationModelContract>
+     * @return class-string<Model&TranslationModel>
      */
     public static function getTranslationModelClass(): string
     {

@@ -2,7 +2,8 @@
 
 declare(strict_types=1);
 
-use Tipi\Translations\Models\TranslationModel;
+use Tipi\Translations\Models\Translation;
+use Tipi\Translations\Models\TranslationState;
 use Tipi\Translations\Providers\LocalizationLocaleProvider;
 
 return [
@@ -11,10 +12,16 @@ return [
      */
     'translations_table' => 'translations',
 
+    'translation_states_table' => 'translation_states',
+
     /*
      * The model used for shared translations.
      */
-    'translation_model' => TranslationModel::class,
+    'translation_model' => Translation::class,
+
+    'translation_state_model' => TranslationState::class,
+
+    'translation_state_status_enum' => null,
 
     /*
      * The locale provider implementation.

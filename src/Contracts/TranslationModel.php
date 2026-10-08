@@ -13,7 +13,7 @@ use Tipi\Support\Locale;
  * @property $locale_code
  * @property $translationParent
  */
-interface TranslationModelContract
+interface TranslationModel
 {
     /**
      * @return class-string<Model&TranslatableModel>

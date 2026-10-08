@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Tipi\Translations;
 
+use BackedEnum;
 use Illuminate\Support\ServiceProvider;
+use InvalidArgumentException;
 use Tipi\Translations\Actions\CreateTranslation;
 use Tipi\Translations\Actions\DeleteTranslation;
 use Tipi\Translations\Actions\LockTranslatable;
@@ -26,16 +28,35 @@ final class TranslationServiceProvider extends ServiceProvider
 
         $this->app->singleton(
             TranslationConfig::class,
-            fn (): TranslationConfig => new TranslationConfig(
-                translationsTable: (string) config('translation.translations_table'),
-                translationModel: (string) config('translation.translation_model'),
-                localeProvider: (string) config('translation.locale_provider'),
-            ),
+            function (): TranslationConfig {
+                $translationStateStatusEnum = config(
+                    'translation.translation_state_status_enum',
+                );
+
+                if (
+                    $translationStateStatusEnum !== null
+                    && ! is_subclass_of($translationStateStatusEnum, BackedEnum::class)
+                ) {
+                    throw new InvalidArgumentException(
+                        'The translation state status enum must be a backed enum.',
+                    );
+                }
+
+                return new TranslationConfig(
+                    translationsTable: (string) config('translation.translations_table'),
+                    translationStatesTable: (string) config('translation.translation_states_table'),
+                    translationModel: (string) config('translation.translation_model'),
+                    translationStateModel: (string) config('translation.translation_state_model'),
+                    translationStateStatusEnum: $translationStateStatusEnum,
+                    localeProvider: (string) config('translation.locale_provider'),
+                );
+            },
         );
         $this->app->singleton(SharedTableTranslationStore::class);
         $this->app->singleton(DedicatedTableTranslationStore::class);
         $this->app->singleton(JsonTranslationStore::class);
         $this->app->singleton(TranslationManager::class);
+        $this->app->singleton(TranslationStateManager::class);
         $this->app->singleton(LockTranslatable::class);
 
         $this->app->scoped(

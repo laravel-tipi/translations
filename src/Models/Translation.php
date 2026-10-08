@@ -16,9 +16,8 @@ use Tipi\Translations\Config\TranslationConfig;
 #[Fillable([
     'locale_code',
     'values',
-    'outdated_at',
 ])]
-class TranslationModel extends Model
+class Translation extends Model
 {
     public function getTable(): string
     {
@@ -29,7 +28,6 @@ class TranslationModel extends Model
     {
         return [
             'values' => 'array',
-            'outdated_at' => 'immutable_datetime',
         ];
     }
 

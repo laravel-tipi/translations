@@ -7,16 +7,16 @@ namespace Tipi\Translations\Stores;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 use Tipi\Translations\Contracts\SharedTableTranslatableModel;
-use Tipi\Translations\Models\TranslationModel;
-use Tipi\Translations\Translation;
+use Tipi\Translations\Models\Translation;
+use Tipi\Translations\Translation as TranslationData;
 
 final readonly class SharedTableTranslationStore
 {
     public function get(
         Model&SharedTableTranslatableModel $translatable,
         string $localeCode,
-    ): ?Translation {
-        /** @var (Model&TranslationModel)|null $translation */
+    ): ?TranslationData {
+        /** @var (Model&Translation)|null $translation */
         $translation = $translatable->translationRecords
             ->firstWhere('locale_code', $localeCode);
 
@@ -29,14 +29,14 @@ final readonly class SharedTableTranslationStore
     }
 
     /**
-     * @return Collection<int, Translation>
+     * @return Collection<int, TranslationData>
      */
     public function all(
         Model&SharedTableTranslatableModel $translatable,
     ): Collection {
         return $translatable->translationRecords
             ->map(
-                fn (TranslationModel $translation): Translation => $this->toTranslation(
+                fn (Translation $translation): TranslationData => $this->toTranslation(
                     translatable: $translatable,
                     translation: $translation,
                 ),
@@ -56,8 +56,8 @@ final readonly class SharedTableTranslationStore
         Model&SharedTableTranslatableModel $translatable,
         string $localeCode,
         array $attributes,
-    ): Translation {
-        /** @var TranslationModel $translation */
+    ): TranslationData {
+        /** @var Translation $translation */
         $translation = $translatable->translationRecords()->create([
             'locale_code' => $localeCode,
             'values' => $attributes,
@@ -75,8 +75,8 @@ final readonly class SharedTableTranslationStore
         Model&SharedTableTranslatableModel $translatable,
         string $localeCode,
         array $attributes,
-    ): Translation {
-        /** @var TranslationModel $translation */
+    ): TranslationData {
+        /** @var Translation $translation */
         $translation = $translatable->translationRecords()
             ->where('locale_code', $localeCode)
             ->firstOrFail();
@@ -86,7 +86,6 @@ final readonly class SharedTableTranslationStore
                 $translation->values,
                 $attributes,
             ),
-            'outdated_at' => null,
         ]);
 
         $this->forgetLoadedTranslations($translatable);
@@ -95,19 +94,6 @@ final readonly class SharedTableTranslationStore
             translatable: $translatable,
             translation: $translation,
         );
-    }
-
-    public function markOthersAsOutdated(
-        Model&SharedTableTranslatableModel $translatable,
-        string $localeCode,
-    ): void {
-        $translatable->translationRecords()
-            ->where('locale_code', '!=', $localeCode)
-            ->update([
-                'outdated_at' => now(),
-            ]);
-
-        $this->forgetLoadedTranslations($translatable);
     }
 
     public function delete(
@@ -123,9 +109,9 @@ final readonly class SharedTableTranslationStore
 
     private function toTranslation(
         Model&SharedTableTranslatableModel $translatable,
-        TranslationModel $translation,
-    ): Translation {
-        return new Translation(
+        Translation $translation,
+    ): TranslationData {
+        return new TranslationData(
             translatable: $translatable,
             localeCode: $translation->locale_code,
             attributes: $translation->values,

@@ -5,7 +5,7 @@ declare(strict_types=1);
 use Illuminate\Database\Eloquent\Model;
 use Tipi\Translations\Actions\CreateTranslation;
 use Tipi\Translations\Actions\UpdateTranslation;
-use Tipi\Translations\Contracts\TracksOutdatedTranslations;
+use Tipi\Translations\Contracts\HasTranslationStates;
 use Tipi\Translations\Contracts\TranslatableModel;
 use Tipi\Translations\Exceptions\InvalidTranslationAttributeException;
 use Tipi\Translations\Exceptions\TranslationDoesNotExistException;
@@ -443,7 +443,7 @@ it('does not partially update a translation when an attribute is invalid', funct
 })->with('translatable models');
 
 it('clears outdated state only for the translation being updated', function (
-    Model&TracksOutdatedTranslations $article,
+    Model&HasTranslationStates $article,
 ): void {
     $article->save();
 
@@ -493,7 +493,7 @@ it('clears outdated state only for the translation being updated', function (
         )->not->toBeNull();
 })->with('outdated tracking translatable models');
 it('does not mark the updated default translation as outdated', function (
-    Model&TracksOutdatedTranslations $article,
+    Model&HasTranslationStates $article,
 ): void {
     $article->save();
 
@@ -531,7 +531,7 @@ it('does not mark the updated default translation as outdated', function (
 })->with('outdated tracking translatable models');
 
 it('clears outdated state after a partial translation update', function (
-    Model&TracksOutdatedTranslations $article,
+    Model&HasTranslationStates $article,
 ): void {
     $article->save();
 
@@ -593,7 +593,7 @@ it('clears outdated state after a partial translation update', function (
 })->with('outdated tracking translatable models');
 
 it('can mark translations outdated repeatedly without marking the default translation', function (
-    Model&TracksOutdatedTranslations $article,
+    Model&HasTranslationStates $article,
 ): void {
     $article->save();
 

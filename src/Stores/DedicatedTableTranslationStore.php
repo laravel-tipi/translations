@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 use Throwable;
 use Tipi\Translations\Contracts\DedicatedTableTranslatableModel;
-use Tipi\Translations\Contracts\TranslationModelContract;
+use Tipi\Translations\Contracts\TranslationModel;
 use Tipi\Translations\Translation;
 
 final readonly class DedicatedTableTranslationStore
@@ -17,7 +17,7 @@ final readonly class DedicatedTableTranslationStore
         Model&DedicatedTableTranslatableModel $translatable,
         string $localeCode,
     ): ?Translation {
-        /** @var (Model&TranslationModelContract)|null $translation */
+        /** @var (Model&TranslationModel)|null $translation */
         $translation = $translatable->translationRecords
             ->firstWhere('locale_code', $localeCode);
 
@@ -37,7 +37,7 @@ final readonly class DedicatedTableTranslationStore
     ): Collection {
         return $translatable->translationRecords
             ->map(
-                fn (Model&TranslationModelContract $translation): Translation => $this->toTranslation(
+                fn (Model&TranslationModel $translation): Translation => $this->toTranslation(
                     $translatable,
                     $translation,
                 ),
@@ -60,7 +60,7 @@ final readonly class DedicatedTableTranslationStore
     ): Translation {
         $translationModelClass = $translatable::getTranslationModelClass();
 
-        /** @var Model&TranslationModelContract $translation */
+        /** @var Model&TranslationModel $translation */
         $translation = new $translationModelClass;
 
         $translation->forceFill([
@@ -90,14 +90,13 @@ final readonly class DedicatedTableTranslationStore
         string $localeCode,
         array $attributes,
     ): Translation {
-        /** @var Model&TranslationModelContract $translation */
+        /** @var Model&TranslationModel $translation */
         $translation = $translatable->translationRecords()
             ->where('locale_code', $localeCode)
             ->firstOrFail();
 
         $translation->forceFill([
             ...$attributes,
-            'outdated_at' => null,
         ]);
 
         $translation->save();
@@ -110,19 +109,6 @@ final readonly class DedicatedTableTranslationStore
         );
     }
 
-    public function markOthersAsOutdated(
-        Model&DedicatedTableTranslatableModel $translatable,
-        string $localeCode,
-    ): void {
-        $translatable->translationRecords()
-            ->where('locale_code', '!=', $localeCode)
-            ->update([
-                'outdated_at' => now(),
-            ]);
-
-        $this->forgetLoadedTranslations($translatable);
-    }
-
     /**
      * @throws Throwable
      */
@@ -130,7 +116,7 @@ final readonly class DedicatedTableTranslationStore
         Model&DedicatedTableTranslatableModel $translatable,
         string $localeCode,
     ): void {
-        /** @var Model&TranslationModelContract $translation */
+        /** @var Model&TranslationModel $translation */
         $translation = $translatable->translationRecords()
             ->where('locale_code', $localeCode)
             ->firstOrFail();
@@ -142,7 +128,7 @@ final readonly class DedicatedTableTranslationStore
 
     private function toTranslation(
         Model&DedicatedTableTranslatableModel $translatable,
-        Model&TranslationModelContract $translation,
+        Model&TranslationModel $translation,
     ): Translation {
         $attributes = [];
 

@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use Tipi\Translations\Exceptions\InvalidTranslationConfigurationException;
-use Tipi\Translations\Tests\Fixtures\Models\ConflictingOutdatedTrackingTranslatable;
 use Tipi\Translations\Tests\Fixtures\Models\ConflictingTranslatable;
 use Tipi\Translations\Tests\Fixtures\Models\InvalidTranslatable;
 use Tipi\Translations\TranslationManager;
@@ -89,18 +88,6 @@ it('rejects multiple storage strategies when deleting a translation', function (
     $article = new ConflictingTranslatable;
 
     resolve(TranslationManager::class)->delete(
-        translatable: $article,
-        localeCode: 'en',
-    );
-})->throws(
-    InvalidTranslationConfigurationException::class,
-    'defines multiple translation storage strategies',
-);
-
-it('rejects multiple storage strategies when marking translations as outdated', function (): void {
-    $article = new ConflictingOutdatedTrackingTranslatable;
-
-    resolve(TranslationManager::class)->markOthersAsOutdated(
         translatable: $article,
         localeCode: 'en',
     );

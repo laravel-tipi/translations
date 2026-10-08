@@ -11,7 +11,6 @@ use Throwable;
 use Tipi\Translations\Contracts\DedicatedTableTranslatableModel;
 use Tipi\Translations\Contracts\JsonTranslatableModel;
 use Tipi\Translations\Contracts\SharedTableTranslatableModel;
-use Tipi\Translations\Contracts\TracksOutdatedTranslations;
 use Tipi\Translations\Contracts\TranslatableModel;
 use Tipi\Translations\Exceptions\EmptyTranslationException;
 use Tipi\Translations\Exceptions\InvalidTranslationAttributeException;
@@ -134,18 +133,6 @@ final readonly class TranslationManager
         );
     }
 
-    public function markOthersAsOutdated(
-        Model&TracksOutdatedTranslations $translatable,
-        string $localeCode,
-    ): void {
-        $this->outdatedTrackingStore($translatable)->markOthersAsOutdated(
-            translatable: $translatable,
-            localeCode: $localeCode,
-        );
-
-        $translatable->forgetResolvedTranslations();
-    }
-
     private function store(
         Model&TranslatableModel $translatable,
     ): DedicatedTableTranslationStore|JsonTranslationStore|SharedTableTranslationStore {
@@ -169,34 +156,6 @@ final readonly class TranslationManager
 
         return match (array_key_first($strategies)) {
             'json' => $this->jsonStore,
-            'dedicated' => $this->dedicatedTableStore,
-            'shared' => $this->sharedTableStore,
-        };
-    }
-
-    private function outdatedTrackingStore(
-        Model&TracksOutdatedTranslations $translatable,
-    ): DedicatedTableTranslationStore|SharedTableTranslationStore {
-        $strategies = array_filter([
-            'dedicated' => $translatable instanceof DedicatedTableTranslatableModel,
-            'shared' => $translatable instanceof SharedTableTranslatableModel,
-        ]);
-
-        if ($strategies === []) {
-            throw new LogicException(sprintf(
-                'Translatable model [%s] does not support outdated translation tracking.',
-                $translatable::class,
-            ));
-        }
-
-        if (count($strategies) > 1) {
-            /** @var Model&TranslatableModel $translatable */
-            throw InvalidTranslationConfigurationException::multipleStorageStrategies(
-                model: $translatable,
-            );
-        }
-
-        return match (array_key_first($strategies)) {
             'dedicated' => $this->dedicatedTableStore,
             'shared' => $this->sharedTableStore,
         };

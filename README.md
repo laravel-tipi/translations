@@ -45,7 +45,7 @@ php artisan vendor:publish --tag=translation-config
 ```php
 return [
     'translations_table' => 'translations',
-    'translation_model' => \Tipi\Translations\Models\TranslationModel::class,
+    'translation_model' => \Tipi\Translations\Models\Translation::class,
     'locale_provider' => \Tipi\Translations\Providers\LocalizationLocaleProvider::class,
 ];
 ```
@@ -77,9 +77,9 @@ By convention the package resolves `ArticleTranslation`. The translation model u
 ```php
 use Illuminate\Database\Eloquent\Model;
 use Tipi\Translations\Concerns\IsTranslation;
-use Tipi\Translations\Contracts\TranslationModelContract;
+use Tipi\Translations\Contracts\TranslationModel;
 
-final class ArticleTranslation extends Model implements TranslationModelContract
+final class ArticleTranslation extends Model implements TranslationModel
 {
     use IsTranslation;
 }

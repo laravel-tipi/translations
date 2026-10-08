@@ -12,7 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create(
-            table: resolve(TranslationConfig::class)->translationsTable,
+            table: resolve(TranslationConfig::class)->translationStatesTable,
             callback: function (Blueprint $table): void {
                 $table->id();
 
@@ -20,8 +20,8 @@ return new class extends Migration
                 $table->unsignedBigInteger('translatable_id');
 
                 $table->string('locale_code');
-                $table->json('values');
-
+                $table->string('status')->nullable();
+                $table->timestamp('outdated_at')->nullable();
                 $table->timestamps();
 
                 $table->unique(
@@ -30,7 +30,7 @@ return new class extends Migration
                         'translatable_id',
                         'locale_code',
                     ],
-                    'translations_owner_locale_unique',
+                    'translation_states_owner_locale_unique',
                 );
             });
     }
@@ -38,7 +38,7 @@ return new class extends Migration
     public function down(): void
     {
         Schema::dropIfExists(
-            table: resolve(TranslationConfig::class)->translationsTable,
+            table: resolve(TranslationConfig::class)->translationStatesTable,
         );
     }
 };

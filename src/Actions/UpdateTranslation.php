@@ -9,18 +9,20 @@ use Illuminate\Support\Facades\DB;
 use JsonException;
 use LogicException;
 use Throwable;
+use Tipi\Translations\Contracts\HasTranslationStates;
 use Tipi\Translations\Contracts\LocaleProvider;
-use Tipi\Translations\Contracts\TracksOutdatedTranslations;
 use Tipi\Translations\Contracts\TranslatableModel;
 use Tipi\Translations\Exceptions\TranslationDoesNotExistException;
 use Tipi\Translations\Translation;
 use Tipi\Translations\TranslationManager;
+use Tipi\Translations\TranslationStateManager;
 
 final readonly class UpdateTranslation
 {
     public function __construct(
         private LocaleProvider $locales,
         private TranslationManager $translations,
+        private TranslationStateManager $translationStates,
         private LockTranslatable $lockTranslatable,
     ) {}
 
@@ -83,9 +85,9 @@ final readonly class UpdateTranslation
         }
 
         if ($markOthersAsOutdated) {
-            if (! $translatable instanceof TracksOutdatedTranslations) {
+            if (! $translatable instanceof HasTranslationStates) {
                 throw new LogicException(sprintf(
-                    'Translatable model [%s] does not support outdated translation tracking.',
+                    'Translatable model [%s] does not support translation states.',
                     $translatable::class,
                 ));
             }
@@ -104,8 +106,8 @@ final readonly class UpdateTranslation
         );
 
         if ($markOthersAsOutdated) {
-            /** @var Model&TranslatableModel&TracksOutdatedTranslations $translatable */
-            $this->translations->markOthersAsOutdated(
+            /** @var Model&TranslatableModel&HasTranslationStates $translatable */
+            $this->translationStates->markOthersAsOutdated(
                 translatable: $translatable,
                 localeCode: $localeCode,
             );
