@@ -13,6 +13,7 @@ use Tipi\Translations\Tests\Fixtures\Localization\FakeLocaleProvider;
 use Tipi\Translations\Tests\Fixtures\Models\DedicatedArticle;
 use Tipi\Translations\Tests\Fixtures\Models\JsonArticle;
 use Tipi\Translations\Tests\Fixtures\Models\SharedArticle;
+use Tipi\Translations\Tests\Fixtures\Models\StatefulJsonArticle;
 use Tipi\Translations\TranslationManager;
 use Tipi\Translations\TranslationStateManager;
 
@@ -20,6 +21,12 @@ dataset('translatable models', [
     'dedicated table' => fn () => DedicatedArticle::query()->create(),
     'shared table' => fn () => SharedArticle::query()->create(),
     'json columns' => fn () => JsonArticle::query()->create(),
+]);
+
+dataset('stateful translatable models', [
+    'dedicated table' => fn () => DedicatedArticle::query()->create(),
+    'shared table' => fn () => SharedArticle::query()->create(),
+    'json columns' => fn () => StatefulJsonArticle::query()->create(),
 ]);
 
 it('deletes a translation', function (
@@ -67,7 +74,7 @@ it('deletes the translation state with the translation', function (
             localeCode: 'ka',
         ),
     )->toBeNull();
-})->with('translatable models');
+})->with('stateful translatable models');
 
 it('uses the current locale when locale is not provided', function (
     Model&TranslatableModel $article,
