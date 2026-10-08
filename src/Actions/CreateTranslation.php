@@ -99,10 +99,6 @@ final readonly class CreateTranslation
             );
         }
 
-        return $this->translations->create(
-            translatable: $translatable,
-            localeCode: $localeCode,
-            attributes: $attributes,
-        );
+        return $translation;
     }
 }
