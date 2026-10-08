@@ -16,19 +16,16 @@ final readonly class SharedTableTranslationStore
         Model&SharedTableTranslatableModel $translatable,
         string $localeCode,
     ): ?Translation {
-        /** @var TranslationModel|null $translation */
-        $translation = $translatable->translationRecords()
-            ->where('locale_code', $localeCode)
-            ->first();
+        /** @var (Model&TranslationModel)|null $translation */
+        $translation = $translatable->translationRecords
+            ->firstWhere('locale_code', $localeCode);
 
-        if ($translation === null) {
-            return null;
-        }
-
-        return $this->toTranslation(
-            translatable: $translatable,
-            translation: $translation,
-        );
+        return $translation === null
+            ? null
+            : $this->toTranslation(
+                translatable: $translatable,
+                translation: $translation,
+            );
     }
 
     /**
@@ -37,23 +34,22 @@ final readonly class SharedTableTranslationStore
     public function all(
         Model&SharedTableTranslatableModel $translatable,
     ): Collection {
-        return $translatable->translationRecords()
-            ->get()
+        return $translatable->translationRecords
             ->map(
                 fn (TranslationModel $translation): Translation => $this->toTranslation(
                     translatable: $translatable,
                     translation: $translation,
                 ),
-            );
+            )
+            ->values();
     }
 
     public function exists(
         Model&SharedTableTranslatableModel $translatable,
         string $localeCode,
     ): bool {
-        return $translatable->translationRecords()
-            ->where('locale_code', $localeCode)
-            ->exists();
+        return $translatable->translationRecords
+            ->contains('locale_code', $localeCode);
     }
 
     public function create(
@@ -66,6 +62,8 @@ final readonly class SharedTableTranslationStore
             'locale_code' => $localeCode,
             'values' => $attributes,
         ]);
+
+        $this->forgetLoadedTranslations($translatable);
 
         return $this->toTranslation(
             translatable: $translatable,
@@ -91,6 +89,8 @@ final readonly class SharedTableTranslationStore
             'outdated_at' => null,
         ]);
 
+        $this->forgetLoadedTranslations($translatable);
+
         return $this->toTranslation(
             translatable: $translatable,
             translation: $translation,
@@ -106,6 +106,8 @@ final readonly class SharedTableTranslationStore
             ->update([
                 'outdated_at' => now(),
             ]);
+
+        $this->forgetLoadedTranslations($translatable);
     }
 
     public function delete(
@@ -115,6 +117,8 @@ final readonly class SharedTableTranslationStore
         $translatable->translationRecords()
             ->where('locale_code', $localeCode)
             ->delete();
+
+        $this->forgetLoadedTranslations($translatable);
     }
 
     private function toTranslation(
@@ -126,5 +130,11 @@ final readonly class SharedTableTranslationStore
             localeCode: $translation->locale_code,
             attributes: $translation->values,
         );
+    }
+
+    private function forgetLoadedTranslations(
+        Model $translatable,
+    ): void {
+        $translatable->unsetRelation('translationRecords');
     }
 }

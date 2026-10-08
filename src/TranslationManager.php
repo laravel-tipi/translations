@@ -29,7 +29,7 @@ final readonly class TranslationManager
     ) {}
 
     /**
-     * @return Collection<string, Translation>
+     * @return Collection<int, Translation>
      */
     public function getAll(
         Model&TranslatableModel $translatable,
@@ -73,11 +73,18 @@ final readonly class TranslationManager
             attributes: $attributes,
         );
 
-        return $store->create(
+        $translation = $store->create(
             translatable: $translatable,
             localeCode: $localeCode,
             attributes: $attributes,
         );
+
+        $translatable->setResolvedTranslation(
+            localeCode: $localeCode,
+            translation: $translation,
+        );
+
+        return $translation;
     }
 
     /**
@@ -95,11 +102,18 @@ final readonly class TranslationManager
             attributes: $attributes,
         );
 
-        return $store->update(
+        $translation = $store->update(
             translatable: $translatable,
             localeCode: $localeCode,
             attributes: $attributes,
         );
+
+        $translatable->setResolvedTranslation(
+            localeCode: $localeCode,
+            translation: $translation,
+        );
+
+        return $translation;
     }
 
     /**
@@ -113,6 +127,11 @@ final readonly class TranslationManager
             translatable: $translatable,
             localeCode: $localeCode,
         );
+
+        $translatable->setResolvedTranslation(
+            localeCode: $localeCode,
+            translation: null,
+        );
     }
 
     public function markOthersAsOutdated(
@@ -123,6 +142,8 @@ final readonly class TranslationManager
             translatable: $translatable,
             localeCode: $localeCode,
         );
+
+        $translatable->forgetResolvedTranslations();
     }
 
     private function store(

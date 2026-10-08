@@ -17,13 +17,16 @@ final readonly class DedicatedTableTranslationStore
         Model&DedicatedTableTranslatableModel $translatable,
         string $localeCode,
     ): ?Translation {
-        $model = $translatable->translationRecords()
-            ->where('locale_code', $localeCode)
-            ->first();
+        /** @var (Model&TranslationModelContract)|null $translation */
+        $translation = $translatable->translationRecords
+            ->firstWhere('locale_code', $localeCode);
 
-        return $model === null
-            ? null
-            : $this->toTranslation($translatable, $model);
+        return $translation === null
+        ? null
+        : $this->toTranslation(
+            translatable: $translatable,
+            translation: $translation,
+        );
     }
 
     /**
@@ -32,23 +35,22 @@ final readonly class DedicatedTableTranslationStore
     public function all(
         Model&DedicatedTableTranslatableModel $translatable,
     ): Collection {
-        return $translatable->translationRecords()
-            ->get()
+        return $translatable->translationRecords
             ->map(
                 fn (Model&TranslationModelContract $translation): Translation => $this->toTranslation(
                     $translatable,
                     $translation,
                 ),
-            );
+            )
+            ->values();
     }
 
     public function exists(
         Model&DedicatedTableTranslatableModel $translatable,
         string $localeCode,
     ): bool {
-        return $translatable->translationRecords()
-            ->where('locale_code', $localeCode)
-            ->exists();
+        return $translatable->translationRecords
+            ->contains('locale_code', $localeCode);
     }
 
     public function create(
@@ -71,6 +73,8 @@ final readonly class DedicatedTableTranslationStore
             ->associate($translatable);
 
         $translation->save();
+
+        $this->forgetLoadedTranslations($translatable);
 
         return $this->toTranslation(
             $translatable,
@@ -98,6 +102,8 @@ final readonly class DedicatedTableTranslationStore
 
         $translation->save();
 
+        $this->forgetLoadedTranslations($translatable);
+
         return $this->toTranslation(
             $translatable,
             $translation,
@@ -113,6 +119,8 @@ final readonly class DedicatedTableTranslationStore
             ->update([
                 'outdated_at' => now(),
             ]);
+
+        $this->forgetLoadedTranslations($translatable);
     }
 
     /**
@@ -128,6 +136,8 @@ final readonly class DedicatedTableTranslationStore
             ->firstOrFail();
 
         $translation->delete();
+
+        $this->forgetLoadedTranslations($translatable);
     }
 
     private function toTranslation(
@@ -145,5 +155,11 @@ final readonly class DedicatedTableTranslationStore
             localeCode: $translation->getAttribute('locale_code'),
             attributes: $attributes,
         );
+    }
+
+    private function forgetLoadedTranslations(
+        Model $translatable,
+    ): void {
+        $translatable->unsetRelation('translationRecords');
     }
 }

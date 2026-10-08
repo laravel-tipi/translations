@@ -18,6 +18,11 @@ use Tipi\Translations\TranslationManager;
 trait HasLocalizedTranslations
 {
     /**
+     * @var array<string, Translation|null>
+     */
+    private array $resolvedTranslations = [];
+
+    /**
      * @return array<int, string>
      */
     public static function getTranslatableAttributes(): array
@@ -47,23 +52,36 @@ trait HasLocalizedTranslations
         return parent::getAttribute($key);
     }
 
+    //    public function translated(
+    //        string $attribute,
+    //        mixed $default = null,
+    //        ?string $localeCode = null,
+    //    ): mixed {
+    //        return data_get(
+    //            target: $this->getTranslation($localeCode)?->attributes,
+    //            key: $attribute,
+    //            default: $default,
+    //        );
+    //    }
+
     public function translated(
         string $attribute,
         mixed $default = null,
         ?string $localeCode = null,
     ): mixed {
-        return data_get(
-            target: $this->getTranslation($localeCode)?->attributes,
-            key: $attribute,
-            default: $default,
-        );
+        return $this->getTranslation($localeCode)
+            ?->attributes[$attribute] ?? $default;
     }
 
     public function getTranslation(?string $localeCode = null): ?Translation
     {
         $localeCode ??= resolve(LocaleProvider::class)->current()->code;
 
-        return resolve(TranslationManager::class)->get(
+        if (array_key_exists($localeCode, $this->resolvedTranslations)) {
+            return $this->resolvedTranslations[$localeCode];
+        }
+
+        return $this->resolvedTranslations[$localeCode] = resolve(TranslationManager::class)->get(
             translatable: $this,
             localeCode: $localeCode,
         );
@@ -76,9 +94,23 @@ trait HasLocalizedTranslations
      */
     public function getTranslations(): Collection
     {
-        return resolve(TranslationManager::class)->getAll(
+        $translations = resolve(TranslationManager::class)->getAll(
             translatable: $this,
         );
+
+        return $translations->map(function (Translation $translation): Translation {
+            if (array_key_exists(
+                $translation->localeCode,
+                $this->resolvedTranslations,
+            )) {
+                return $this->resolvedTranslations[$translation->localeCode]
+                    ?? $translation;
+            }
+
+            $this->resolvedTranslations[$translation->localeCode] = $translation;
+
+            return $translation;
+        });
     }
 
     /**
@@ -116,5 +148,22 @@ trait HasLocalizedTranslations
     public function canBeTranslated(): bool
     {
         return $this->hasMissingTranslations();
+    }
+
+    public function setResolvedTranslation(
+        string $localeCode,
+        ?Translation $translation,
+    ): void {
+        $this->resolvedTranslations[$localeCode] = $translation;
+    }
+
+    public function forgetResolvedTranslation(string $localeCode): void
+    {
+        unset($this->resolvedTranslations[$localeCode]);
+    }
+
+    public function forgetResolvedTranslations(): void
+    {
+        $this->resolvedTranslations = [];
     }
 }
