@@ -19,9 +19,10 @@ dataset('translatable models', [
     'shared table' => fn () => SharedArticle::query()->create(),
     'json columns' => fn () => JsonArticle::query()->create(),
 ]);
-dataset('outdated tracking translatable models', [
+dataset('translation state models', [
     'dedicated table' => fn () => new DedicatedArticle,
     'shared table' => fn () => new SharedArticle,
+    'json columns' => fn () => new JsonArticle,
 ]);
 
 it('partially updates a translation', function (
@@ -135,9 +136,10 @@ it('uses the current locale when locale is not provided', function (
         ->toBe('განახლებული სათაური');
 })->with('translatable models');
 
-dataset('outdated tracking models', [
+dataset('persisted translation state models', [
     'dedicated table' => fn () => DedicatedArticle::query()->create(),
     'shared table' => fn () => SharedArticle::query()->create(),
+    'json columns' => fn () => JsonArticle::query()->create(),
 ]);
 
 it('marks other translations as outdated when updating the default translation', function (
@@ -171,24 +173,24 @@ it('marks other translations as outdated when updating the default translation',
     );
 
     expect(
-        $article->translationRecords()
+        $article->translationStates()
             ->where('locale_code', 'en')
             ->whereNotNull('outdated_at')
             ->exists(),
     )->toBeFalse()
         ->and(
-            $article->translationRecords()
+            $article->translationStates()
                 ->where('locale_code', 'ka')
                 ->whereNotNull('outdated_at')
                 ->exists(),
         )->toBeTrue()
         ->and(
-            $article->translationRecords()
+            $article->translationStates()
                 ->where('locale_code', 'de')
                 ->whereNotNull('outdated_at')
                 ->exists(),
         )->toBeTrue();
-})->with('outdated tracking models');
+})->with('persisted translation state models');
 
 it('does not allow a non-default translation to mark others as outdated', function (
     Model&TranslatableModel $article,
@@ -205,31 +207,11 @@ it('does not allow a non-default translation to mark others as outdated', functi
         localeCode: 'ka',
         markOthersAsOutdated: true,
     );
-})->with('outdated tracking models')
+})->with('persisted translation state models')
     ->throws(
         LogicException::class,
         'Only the default translation can mark other translations as outdated.',
     );
-
-it('does not allow json translations to mark others as outdated', function (): void {
-    $article = JsonArticle::query()->create();
-
-    resolve(CreateTranslation::class)->execute(
-        translatable: $article,
-        attributes: ['title' => 'English'],
-        localeCode: 'en',
-    );
-
-    resolve(UpdateTranslation::class)->execute(
-        translatable: $article,
-        attributes: ['title' => 'Updated English'],
-        localeCode: 'en',
-        markOthersAsOutdated: true,
-    );
-})->throws(
-    LogicException::class,
-    'does not support outdated translation tracking',
-);
 
 it('keeps the json model synchronized after updating a translation', function (): void {
     $article = JsonArticle::query()->create();
@@ -461,13 +443,13 @@ it('clears outdated state only for the translation being updated', function (
     );
 
     expect(
-        $article->translationRecords()
+        $article->translationStates()
             ->where('locale_code', 'ka')
             ->firstOrFail()
             ->outdated_at,
     )->not->toBeNull()
         ->and(
-            $article->translationRecords()
+            $article->translationStates()
                 ->where('locale_code', 'de')
                 ->firstOrFail()
                 ->outdated_at,
@@ -480,18 +462,18 @@ it('clears outdated state only for the translation being updated', function (
     );
 
     expect(
-        $article->translationRecords()
+        $article->translationStates()
             ->where('locale_code', 'ka')
             ->firstOrFail()
             ->outdated_at,
     )->toBeNull()
         ->and(
-            $article->translationRecords()
+            $article->translationStates()
                 ->where('locale_code', 'de')
                 ->firstOrFail()
                 ->outdated_at,
         )->not->toBeNull();
-})->with('outdated tracking translatable models');
+})->with('translation state models');
 it('does not mark the updated default translation as outdated', function (
     Model&HasTranslationStates $article,
 ): void {
@@ -511,24 +493,24 @@ it('does not mark the updated default translation as outdated', function (
     );
 
     expect(
-        $article->translationRecords()
+        $article->translationStates()
             ->where('locale_code', 'en')
             ->firstOrFail()
             ->outdated_at,
     )->toBeNull()
         ->and(
-            $article->translationRecords()
+            $article->translationStates()
                 ->where('locale_code', 'ka')
                 ->firstOrFail()
                 ->outdated_at,
         )->not->toBeNull()
         ->and(
-            $article->translationRecords()
+            $article->translationStates()
                 ->where('locale_code', 'de')
                 ->firstOrFail()
                 ->outdated_at,
         )->not->toBeNull();
-})->with('outdated tracking translatable models');
+})->with('translation state models');
 
 it('clears outdated state after a partial translation update', function (
     Model&HasTranslationStates $article,
@@ -563,7 +545,7 @@ it('clears outdated state after a partial translation update', function (
     );
 
     expect(
-        $article->translationRecords()
+        $article->translationStates()
             ->where('locale_code', 'ka')
             ->firstOrFail()
             ->outdated_at,
@@ -578,7 +560,7 @@ it('clears outdated state after a partial translation update', function (
     );
 
     expect(
-        $article->translationRecords()
+        $article->translationStates()
             ->where('locale_code', 'ka')
             ->firstOrFail()
             ->outdated_at,
@@ -590,7 +572,7 @@ it('clears outdated state after a partial translation update', function (
         ->toBe('განახლებული')
         ->and($translation?->attributes['description'])
         ->toBe('ქართული აღწერა');
-})->with('outdated tracking translatable models');
+})->with('translation state models');
 
 it('can mark translations outdated repeatedly without marking the default translation', function (
     Model&HasTranslationStates $article,
@@ -619,20 +601,20 @@ it('can mark translations outdated repeatedly without marking the default transl
     );
 
     expect(
-        $article->translationRecords()
+        $article->translationStates()
             ->where('locale_code', 'en')
             ->firstOrFail()
             ->outdated_at,
     )->toBeNull()
         ->and(
-            $article->translationRecords()
+            $article->translationStates()
                 ->where('locale_code', 'ka')
                 ->firstOrFail()
                 ->outdated_at,
         )->not->toBeNull()
         ->and($article->getTranslation('en')?->attributes['title'])
         ->toBe('English v3');
-})->with('outdated tracking translatable models');
+})->with('translation state models');
 
 it('preserves unicode and json-looking strings exactly', function (
     Model&TranslatableModel $article,
