@@ -12,6 +12,7 @@ use Tipi\Translations\Tests\Fixtures\Models\DedicatedArticle;
 use Tipi\Translations\Tests\Fixtures\Models\JsonArticle;
 use Tipi\Translations\Tests\Fixtures\Models\SharedArticle;
 use Tipi\Translations\TranslationManager;
+use Tipi\Translations\TranslationStateManager;
 
 dataset('translatable models', [
     'dedicated table' => fn () => DedicatedArticle::query()->create(),
@@ -37,6 +38,26 @@ it('creates a translation', function (
             'title' => 'English title',
             'description' => 'English description',
         ]);
+})->with('translatable models');
+
+it('creates a translation state with the translation', function (
+    Model&TranslatableModel $article,
+): void {
+    resolve(CreateTranslation::class)->execute(
+        translatable: $article,
+        attributes: ['title' => 'English title'],
+        localeCode: 'en',
+    );
+
+    $state = resolve(TranslationStateManager::class)->get(
+        translatable: $article,
+        localeCode: 'en',
+    );
+
+    expect($state)->not->toBeNull()
+        ->and($state->locale_code)->toBe('en')
+        ->and($state->outdated_at)->toBeNull()
+        ->and($state->status)->toBeNull();
 })->with('translatable models');
 
 it('uses the default locale when locale is not provided', function (
