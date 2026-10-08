@@ -105,12 +105,18 @@ final readonly class UpdateTranslation
             attributes: $attributes,
         );
 
-        if ($markOthersAsOutdated) {
-            /** @var Model&TranslatableModel&HasTranslationStates $translatable */
-            $this->translationStates->markOthersAsOutdated(
+        if ($translatable instanceof HasTranslationStates) {
+            $this->translationStates->markAsCurrent(
                 translatable: $translatable,
                 localeCode: $localeCode,
             );
+
+            if ($markOthersAsOutdated) {
+                $this->translationStates->markOthersAsOutdated(
+                    translatable: $translatable,
+                    localeCode: $localeCode,
+                );
+            }
         }
 
         return $translation;
