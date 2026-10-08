@@ -102,4 +102,3 @@ function benchmarkAverage(callable $callback, int $runs = 5): float
 
     return array_sum($milliseconds) / count($milliseconds);
 }
-
