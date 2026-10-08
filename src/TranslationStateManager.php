@@ -6,11 +6,17 @@ namespace Tipi\Translations;
 
 use BackedEnum;
 use Illuminate\Database\Eloquent\Model;
+use Tipi\Translations\Config\TranslationConfig;
 use Tipi\Translations\Contracts\HasTranslationStates;
+use Tipi\Translations\Exceptions\InvalidTranslationConfigurationException;
 use Tipi\Translations\Models\TranslationState;
 
 final readonly class TranslationStateManager
 {
+    public function __construct(
+        private TranslationConfig $config,
+    ) {}
+
     public function get(
         Model&HasTranslationStates $translatable,
         string $localeCode,
@@ -46,6 +52,22 @@ final readonly class TranslationStateManager
         string $localeCode,
         ?BackedEnum $status,
     ): TranslationState {
+        $statusEnum = $this->config->translationStateStatusEnum;
+
+        if ($status !== null && $statusEnum === null) {
+            throw new InvalidTranslationConfigurationException(
+                'Translation state statuses are not configured.',
+            );
+        }
+        if ($status !== null && ! $status instanceof $statusEnum) {
+            throw new InvalidTranslationConfigurationException(
+                sprintf(
+                    'Translation state status must be an instance of [%s].',
+                    $statusEnum,
+                ),
+            );
+        }
+
         $state = $this->getOrFail(
             translatable: $translatable,
             localeCode: $localeCode,

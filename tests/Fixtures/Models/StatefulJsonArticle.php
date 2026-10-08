@@ -10,7 +10,7 @@ use Tipi\Translations\Concerns\InteractsWithTranslationStates;
 use Tipi\Translations\Contracts\HasTranslationStates;
 use Tipi\Translations\Contracts\JsonTranslatableModel;
 
-final class StatefulJsonArticle extends Model implements JsonTranslatableModel, HasTranslationStates
+final class StatefulJsonArticle extends Model implements HasTranslationStates, JsonTranslatableModel
 {
     use HasJsonTranslations;
     use InteractsWithTranslationStates;
