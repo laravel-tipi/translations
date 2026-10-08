@@ -49,11 +49,4 @@ trait HasSharedTableTranslations
             $model->translationRecords()->delete();
         });
     }
-
-    public function hasOutdatedTranslations(): bool
-    {
-        return $this->translationRecords()
-            ->whereNotNull('outdated_at')
-            ->exists();
-    }
 }

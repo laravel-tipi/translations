@@ -8,6 +8,7 @@ use Tipi\Translations\Contracts\TranslatableModel;
 use Tipi\Translations\Exceptions\EmptyTranslationException;
 use Tipi\Translations\Exceptions\InvalidTranslationAttributeException;
 use Tipi\Translations\Exceptions\TranslationAlreadyExistsException;
+use Tipi\Translations\Tests\Fixtures\Localization\FakeLocaleProvider;
 use Tipi\Translations\Tests\Fixtures\Models\DedicatedArticle;
 use Tipi\Translations\Tests\Fixtures\Models\JsonArticle;
 use Tipi\Translations\Tests\Fixtures\Models\SharedArticle;
@@ -67,17 +68,19 @@ it('creates a translation state with the translation', function (
         ->and($state->status)->toBeNull();
 })->with('stateful translatable models');
 
-it('uses the default locale when locale is not provided', function (
+it('uses the current locale instead of the default when locale is not provided', function (
     Model&TranslatableModel $article,
 ): void {
+    resolve(FakeLocaleProvider::class)->setDefault('en')->setCurrent('ka');
+
     $translation = resolve(CreateTranslation::class)->execute(
         translatable: $article,
         attributes: [
-            'title' => 'English title',
+            'title' => 'ქართული სათაური',
         ],
     );
 
-    expect($translation->localeCode)->toBe('en');
+    expect($translation->localeCode)->toBe('ka');
 })->with('translatable models');
 
 it('does not create a translation that already exists', function (

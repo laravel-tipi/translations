@@ -6,18 +6,18 @@ namespace Tipi\Translations\Tests\Fixtures\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use Tipi\Translations\Concerns\HasDedicatedTableTranslations;
+use Tipi\Translations\Concerns\HasJsonTranslations;
 use Tipi\Translations\Concerns\InteractsWithTranslationStates;
-use Tipi\Translations\Contracts\DedicatedTableTranslatableModel;
 use Tipi\Translations\Contracts\HasTranslationStates;
+use Tipi\Translations\Contracts\JsonTranslatableModel;
 
-final class SoftDeletingDedicatedArticle extends Model implements DedicatedTableTranslatableModel, HasTranslationStates
+final class SoftDeletingStatefulJsonArticle extends Model implements HasTranslationStates, JsonTranslatableModel
 {
-    use HasDedicatedTableTranslations;
+    use HasJsonTranslations;
     use InteractsWithTranslationStates;
     use SoftDeletes;
 
-    protected $table = 'soft_deleting_dedicated_articles';
+    protected $table = 'json_articles';
 
     protected static array $translatableAttributes = [
         'title',

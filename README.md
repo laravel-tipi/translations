@@ -26,7 +26,7 @@ composer require laravel-tipi/translations
 
 Laravel discovers `Tipi\Translations\TranslationServiceProvider` automatically.
 
-The package migration creates the shared translations table. Run your application migrations:
+The package migrations create the shared translations and translation states tables. Run your application migrations:
 
 ```bash
 php artisan migrate
@@ -46,6 +46,9 @@ php artisan vendor:publish --tag=translation-config
 return [
     'translations_table' => 'translations',
     'translation_model' => \Tipi\Translations\Models\Translation::class,
+    'translation_states_table' => 'translation_states',
+    'translation_state_model' => \Tipi\Translations\Models\TranslationState::class,
+    'translation_state_status_enum' => null,
     'locale_provider' => \Tipi\Translations\Providers\LocalizationLocaleProvider::class,
 ];
 ```
@@ -85,7 +88,7 @@ final class ArticleTranslation extends Model implements TranslationModel
 }
 ```
 
-Your translation table should contain the parent foreign key, `locale_code`, translated columns, nullable `outdated_at`, and timestamps. Add a unique constraint for the parent foreign key plus `locale_code`.
+Your translation table should contain the parent foreign key, `locale_code`, translated columns and timestamps. Add a unique constraint for the parent foreign key plus `locale_code`.
 
 Translated attributes use the translation model's normal Eloquent casting behavior. Configure casts on the translation model when an attribute contains structured values such as JSON or rich-text document data:
 
@@ -146,7 +149,20 @@ Each translatable attribute must be backed by a JSON column. `HasJsonTranslation
 
 JSON translations can be created on unsaved models and accumulated before the parent model is first persisted. Dedicated-table and shared-table translations require an already-persisted parent model.
 
-JSON translations intentionally do not support outdated-translation tracking.
+Translation states, including statuses and outdated tracking, are independent of storage strategy. JSON models can opt in alongside dedicated-table and shared-table models by implementing `HasTranslationStates` and using `InteractsWithTranslationStates`. The `outdated_at` timestamp belongs exclusively to `TranslationState`, not to translation records.
+
+```php
+use Tipi\Translations\Concerns\InteractsWithTranslationStates;
+use Tipi\Translations\Contracts\HasTranslationStates;
+
+final class Article extends Model implements JsonTranslatableModel, HasTranslationStates
+{
+    use HasJsonTranslations;
+    use InteractsWithTranslationStates;
+
+    protected static array $translatableAttributes = ['title', 'description'];
+}
+```
 
 ## Reading translations
 
@@ -183,7 +199,7 @@ $translation = resolve(CreateTranslation::class)->execute(
 );
 ```
 
-If `localeCode` is omitted when creating a translation, the default locale is used.
+If `localeCode` is omitted when creating a translation, the current locale is used.
 
 ## Updating translations
 
@@ -201,16 +217,18 @@ $translation = resolve(UpdateTranslation::class)->execute(
 
 Updates are partial: omitted attributes remain unchanged, while an explicitly supplied `null` clears that translated value.
 
-For table-backed strategies, updating the default translation can mark the other translations as outdated:
+For models implementing `HasTranslationStates`, updating any translation can mark every other locale as outdated, regardless of storage strategy:
 
 ```php
 resolve(UpdateTranslation::class)->execute(
     translatable: $article,
-    attributes: ['title' => 'Updated default title'],
+    attributes: ['title' => 'Updated source title'],
     localeCode: 'ka',
     markOthersAsOutdated: true,
 );
 ```
+
+The updated/source locale is marked current. With `markOthersAsOutdated: false`, other locales retain their existing freshness. Translation freshness is independent of the application’s default locale.
 
 ## Deleting translations
 
@@ -226,6 +244,8 @@ resolve(DeleteTranslation::class)->execute(
 The default translation cannot be deleted independently.
 
 Hard-deleting a table-backed translatable model deletes its translation records. Soft-deleting the parent keeps them; force-deleting removes them.
+
+`InteractsWithTranslationStates` also preserves translation states on soft delete and deletes them when the parent is permanently deleted, for every storage strategy.
 
 ## Transactions
 

@@ -22,7 +22,6 @@ trait CreatesTestSchema
             $table->string('locale_code');
             $table->string('title')->nullable();
             $table->text('description')->nullable();
-            $table->timestamp('outdated_at')->nullable();
             $table->timestamps();
 
             $table->unique([
@@ -39,6 +38,7 @@ trait CreatesTestSchema
         Schema::create('json_articles', function (Blueprint $table): void {
             $table->id();
             $table->string('slug')->nullable();
+            $table->softDeletes();
             $table->json('title')->nullable();
             $table->json('description')->nullable();
             $table->timestamps();
@@ -56,7 +56,6 @@ trait CreatesTestSchema
             $table->string('locale_code');
             $table->string('title')->nullable();
             $table->text('description')->nullable();
-            $table->timestamp('outdated_at')->nullable();
             $table->timestamps();
 
             $table->unique([

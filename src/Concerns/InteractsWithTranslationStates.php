@@ -4,11 +4,27 @@ declare(strict_types=1);
 
 namespace Tipi\Translations\Concerns;
 
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Tipi\Translations\Config\TranslationConfig;
 
 trait InteractsWithTranslationStates
 {
+    public static function bootInteractsWithTranslationStates(): void
+    {
+        static::deleted(function (Model $model): void {
+            if (
+                method_exists($model, 'isForceDeleting')
+                && ! $model->isForceDeleting()
+            ) {
+                return;
+            }
+
+            $model->translationStates()->delete();
+            $model->unsetRelation('translationStates');
+        });
+    }
+
     public function translationStates(): MorphMany
     {
         return $this->morphMany(

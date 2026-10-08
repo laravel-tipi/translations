@@ -7,11 +7,14 @@ namespace Tipi\Translations\Tests\Fixtures\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Tipi\Translations\Concerns\HasSharedTableTranslations;
+use Tipi\Translations\Concerns\InteractsWithTranslationStates;
+use Tipi\Translations\Contracts\HasTranslationStates;
 use Tipi\Translations\Contracts\SharedTableTranslatableModel;
 
-final class SoftDeletingSharedArticle extends Model implements SharedTableTranslatableModel
+final class SoftDeletingSharedArticle extends Model implements HasTranslationStates, SharedTableTranslatableModel
 {
     use HasSharedTableTranslations;
+    use InteractsWithTranslationStates;
     use SoftDeletes;
 
     protected $table = 'soft_deleting_shared_articles';

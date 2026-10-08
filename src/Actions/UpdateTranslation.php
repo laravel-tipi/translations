@@ -91,12 +91,6 @@ final readonly class UpdateTranslation
                     $translatable::class,
                 ));
             }
-
-            if ($localeCode !== $this->locales->default()->code) {
-                throw new LogicException(
-                    'Only the default translation can mark other translations as outdated.',
-                );
-            }
         }
 
         $translation = $this->translations->update(

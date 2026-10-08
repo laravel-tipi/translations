@@ -9,7 +9,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Tipi\Support\Locale;
 
 /**
- * @property $outdated_at
  * @property $locale_code
  * @property $translationParent
  */
@@ -29,6 +28,4 @@ interface TranslationModel
     public function canBeDeleted(): bool;
 
     public function canBeUpdated(): bool;
-
-    public function isOutdated(): bool;
 }

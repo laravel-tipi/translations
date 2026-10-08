@@ -20,7 +20,6 @@ trait IsTranslation
     public function initializeIsTranslation(): void
     {
         $this->mergeCasts([
-            'outdated_at' => 'immutable_datetime',
             'created_at' => 'immutable_datetime',
             'updated_at' => 'immutable_datetime',
         ]);
@@ -61,11 +60,6 @@ trait IsTranslation
     public function canBeUpdated(): bool
     {
         return true;
-    }
-
-    public function isOutdated(): bool
-    {
-        return $this->outdated_at !== null;
     }
 
     public function isDefault(): bool

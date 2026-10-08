@@ -54,9 +54,4 @@ trait HasDedicatedTableTranslations
                 resolve(LocaleProvider::class)->default()->code,
             );
     }
-
-    public function hasOutdatedTranslations(): bool
-    {
-        return $this->translationRecords()->whereNotNull('outdated_at')->exists();
-    }
 }

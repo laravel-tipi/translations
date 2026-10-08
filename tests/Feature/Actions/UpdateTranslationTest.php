@@ -14,6 +14,7 @@ use Tipi\Translations\Tests\Fixtures\Models\DedicatedArticle;
 use Tipi\Translations\Tests\Fixtures\Models\JsonArticle;
 use Tipi\Translations\Tests\Fixtures\Models\SharedArticle;
 use Tipi\Translations\Tests\Fixtures\Models\StatefulJsonArticle;
+use Tipi\Translations\TranslationStateManager;
 
 dataset('translatable models', [
     'dedicated table' => fn () => DedicatedArticle::query()->create(),
@@ -143,76 +144,61 @@ dataset('persisted translation state models', [
     'json columns' => fn () => StatefulJsonArticle::query()->create(),
 ]);
 
-it('marks other translations as outdated when updating the default translation', function (
-    Model&TranslatableModel $article,
+it('marks every other locale outdated and clears the source regardless of the default locale', function (
+    Model&TranslatableModel&HasTranslationStates $article,
+    string $sourceLocale,
+    bool $explicitLocale,
 ): void {
-    $create = resolve(CreateTranslation::class);
+    resolve(FakeLocaleProvider::class)->setDefault('en')->setCurrent('ka');
 
-    $create->execute(
-        translatable: $article,
-        attributes: ['title' => 'English'],
-        localeCode: 'en',
-    );
+    foreach (['en', 'ka', 'de'] as $locale) {
+        resolve(CreateTranslation::class)->execute($article, ['title' => $locale], $locale);
+    }
 
-    $create->execute(
-        translatable: $article,
-        attributes: ['title' => 'ქართული'],
-        localeCode: 'ka',
-    );
+    resolve(TranslationStateManager::class)->markAsOutdated($article, $sourceLocale);
 
-    $create->execute(
+    $translation = resolve(UpdateTranslation::class)->execute(
         translatable: $article,
-        attributes: ['title' => 'Deutsch'],
-        localeCode: 'de',
-    );
-
-    resolve(UpdateTranslation::class)->execute(
-        translatable: $article,
-        attributes: ['title' => 'Updated English'],
-        localeCode: 'en',
+        attributes: ['title' => 'Updated source'],
+        localeCode: $explicitLocale ? $sourceLocale : null,
         markOthersAsOutdated: true,
     );
 
-    expect(
-        $article->translationStates()
-            ->where('locale_code', 'en')
-            ->whereNotNull('outdated_at')
-            ->exists(),
-    )->toBeFalse()
-        ->and(
-            $article->translationStates()
-                ->where('locale_code', 'ka')
-                ->whereNotNull('outdated_at')
-                ->exists(),
-        )->toBeTrue()
-        ->and(
-            $article->translationStates()
-                ->where('locale_code', 'de')
-                ->whereNotNull('outdated_at')
-                ->exists(),
-        )->toBeTrue();
+    expect($translation->localeCode)->toBe($sourceLocale);
+
+    foreach (['en', 'ka', 'de'] as $locale) {
+        $state = $article->translationStates()->where('locale_code', $locale)->firstOrFail();
+        expect($state->outdated_at !== null)->toBe($locale !== $sourceLocale);
+    }
+})->with('persisted translation state models')->with([
+    'explicit English source' => ['en', true],
+    'explicit Georgian source' => ['ka', true],
+    'current Georgian source' => ['ka', false],
+]);
+
+it('leaves other locales freshness unchanged when outdated propagation is disabled', function (
+    Model&TranslatableModel&HasTranslationStates $article,
+): void {
+    resolve(FakeLocaleProvider::class)->setDefault('en')->setCurrent('ka');
+
+    foreach (['en', 'ka', 'de'] as $locale) {
+        resolve(CreateTranslation::class)->execute($article, ['title' => $locale], $locale);
+    }
+
+    $states = resolve(TranslationStateManager::class);
+    $states->markAsOutdated($article, 'ka');
+    $states->markAsOutdated($article, 'de');
+    $before = $article->translationStates()->where('locale_code', '!=', 'ka')->orderBy('id')->get()->toArray();
+
+    resolve(UpdateTranslation::class)->execute(
+        translatable: $article,
+        attributes: ['title' => 'Updated source'],
+        markOthersAsOutdated: false,
+    );
+
+    expect($article->translationStates()->where('locale_code', 'ka')->firstOrFail()->outdated_at)->toBeNull()
+        ->and($article->translationStates()->where('locale_code', '!=', 'ka')->orderBy('id')->get()->toArray())->toBe($before);
 })->with('persisted translation state models');
-
-it('does not allow a non-default translation to mark others as outdated', function (
-    Model&TranslatableModel $article,
-): void {
-    resolve(CreateTranslation::class)->execute(
-        translatable: $article,
-        attributes: ['title' => 'ქართული'],
-        localeCode: 'ka',
-    );
-
-    resolve(UpdateTranslation::class)->execute(
-        translatable: $article,
-        attributes: ['title' => 'განახლებული'],
-        localeCode: 'ka',
-        markOthersAsOutdated: true,
-    );
-})->with('persisted translation state models')
-    ->throws(
-        LogicException::class,
-        'Only the default translation can mark other translations as outdated.',
-    );
 
 it('keeps the json model synchronized after updating a translation', function (): void {
     $article = JsonArticle::query()->create();
@@ -475,7 +461,7 @@ it('clears outdated state only for the translation being updated', function (
                 ->outdated_at,
         )->not->toBeNull();
 })->with('translation state models');
-it('does not mark the updated default translation as outdated', function (
+it('does not mark the updated source translation as outdated', function (
     Model&HasTranslationStates $article,
 ): void {
     $article->save();
@@ -575,7 +561,7 @@ it('clears outdated state after a partial translation update', function (
         ->toBe('ქართული აღწერა');
 })->with('translation state models');
 
-it('can mark translations outdated repeatedly without marking the default translation', function (
+it('can mark translations outdated repeatedly without marking the source translation', function (
     Model&HasTranslationStates $article,
 ): void {
     $article->save();
