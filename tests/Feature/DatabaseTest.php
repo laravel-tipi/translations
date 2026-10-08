@@ -7,5 +7,6 @@ it('boots the test database schema', function (): void {
         ->and(Schema::hasTable('dedicated_article_translations'))->toBeTrue()
         ->and(Schema::hasTable('shared_articles'))->toBeTrue()
         ->and(Schema::hasTable('json_articles'))->toBeTrue()
-        ->and(Schema::hasTable('translations'))->toBeTrue();
+        ->and(Schema::hasTable('translations'))->toBeTrue()
+        ->and(Schema::hasTable('translation_states'))->toBeTrue();
 });
