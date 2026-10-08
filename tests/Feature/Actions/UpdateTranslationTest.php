@@ -13,6 +13,7 @@ use Tipi\Translations\Tests\Fixtures\Localization\FakeLocaleProvider;
 use Tipi\Translations\Tests\Fixtures\Models\DedicatedArticle;
 use Tipi\Translations\Tests\Fixtures\Models\JsonArticle;
 use Tipi\Translations\Tests\Fixtures\Models\SharedArticle;
+use Tipi\Translations\Tests\Fixtures\Models\StatefulJsonArticle;
 
 dataset('translatable models', [
     'dedicated table' => fn () => DedicatedArticle::query()->create(),
@@ -22,7 +23,7 @@ dataset('translatable models', [
 dataset('translation state models', [
     'dedicated table' => fn () => new DedicatedArticle,
     'shared table' => fn () => new SharedArticle,
-    'json columns' => fn () => new JsonArticle,
+    'json columns' => fn () => new StatefulJsonArticle,
 ]);
 
 it('partially updates a translation', function (
@@ -139,7 +140,7 @@ it('uses the current locale when locale is not provided', function (
 dataset('persisted translation state models', [
     'dedicated table' => fn () => DedicatedArticle::query()->create(),
     'shared table' => fn () => SharedArticle::query()->create(),
-    'json columns' => fn () => JsonArticle::query()->create(),
+    'json columns' => fn () => StatefulJsonArticle::query()->create(),
 ]);
 
 it('marks other translations as outdated when updating the default translation', function (
