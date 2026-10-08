@@ -11,6 +11,7 @@ use Tipi\Translations\Exceptions\TranslationAlreadyExistsException;
 use Tipi\Translations\Tests\Fixtures\Models\DedicatedArticle;
 use Tipi\Translations\Tests\Fixtures\Models\JsonArticle;
 use Tipi\Translations\Tests\Fixtures\Models\SharedArticle;
+use Tipi\Translations\Tests\Fixtures\Models\StatefulJsonArticle;
 use Tipi\Translations\TranslationManager;
 use Tipi\Translations\TranslationStateManager;
 
@@ -18,6 +19,12 @@ dataset('translatable models', [
     'dedicated table' => fn () => DedicatedArticle::query()->create(),
     'shared table' => fn () => SharedArticle::query()->create(),
     'json columns' => fn () => JsonArticle::query()->create(),
+]);
+
+dataset('stateful translatable models', [
+    'dedicated table' => fn () => DedicatedArticle::query()->create(),
+    'shared table' => fn () => SharedArticle::query()->create(),
+    'json columns' => fn () => StatefulJsonArticle::query()->create(),
 ]);
 
 it('creates a translation', function (
@@ -58,7 +65,7 @@ it('creates a translation state with the translation', function (
         ->and($state->locale_code)->toBe('en')
         ->and($state->outdated_at)->toBeNull()
         ->and($state->status)->toBeNull();
-})->with('translatable models');
+})->with('stateful translatable models');
 
 it('uses the default locale when locale is not provided', function (
     Model&TranslatableModel $article,
