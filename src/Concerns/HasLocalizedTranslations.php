@@ -17,6 +17,8 @@ use Tipi\Translations\TranslationManager;
  */
 trait HasLocalizedTranslations
 {
+    use HasTranslationQueries;
+
     /**
      * @var array<string, Translation|null>
      */

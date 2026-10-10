@@ -9,12 +9,11 @@ use Illuminate\Support\Collection;
 use LogicException;
 use Throwable;
 use Tipi\Translations\Contracts\DedicatedTableTranslatableModel;
-use Tipi\Translations\Contracts\JsonTranslatableModel;
 use Tipi\Translations\Contracts\SharedTableTranslatableModel;
 use Tipi\Translations\Contracts\TranslatableModel;
+use Tipi\Translations\Enums\TranslationDriver;
 use Tipi\Translations\Exceptions\EmptyTranslationException;
 use Tipi\Translations\Exceptions\InvalidTranslationAttributeException;
-use Tipi\Translations\Exceptions\InvalidTranslationConfigurationException;
 use Tipi\Translations\Stores\DedicatedTableTranslationStore;
 use Tipi\Translations\Stores\JsonTranslationStore;
 use Tipi\Translations\Stores\SharedTableTranslationStore;
@@ -23,8 +22,9 @@ final readonly class TranslationManager
 {
     public function __construct(
         private JsonTranslationStore $jsonStore,
-        private DedicatedTableTranslationStore $dedicatedTableStore,
         private SharedTableTranslationStore $sharedTableStore,
+        private DedicatedTableTranslationStore $dedicatedTableStore,
+        private TranslationDriverResolver $drivers,
     ) {}
 
     /**
@@ -136,28 +136,10 @@ final readonly class TranslationManager
     private function store(
         Model&TranslatableModel $translatable,
     ): DedicatedTableTranslationStore|JsonTranslationStore|SharedTableTranslationStore {
-        $strategies = array_filter([
-            'json' => $translatable instanceof JsonTranslatableModel,
-            'dedicated' => $translatable instanceof DedicatedTableTranslatableModel,
-            'shared' => $translatable instanceof SharedTableTranslatableModel,
-        ]);
-
-        if ($strategies === []) {
-            throw InvalidTranslationConfigurationException::missingStorageStrategy(
-                model: $translatable,
-            );
-        }
-
-        if (count($strategies) > 1) {
-            throw InvalidTranslationConfigurationException::multipleStorageStrategies(
-                model: $translatable,
-            );
-        }
-
-        return match (array_key_first($strategies)) {
-            'json' => $this->jsonStore,
-            'dedicated' => $this->dedicatedTableStore,
-            'shared' => $this->sharedTableStore,
+        return match ($this->drivers->resolve($translatable)) {
+            TranslationDriver::Json => $this->jsonStore,
+            TranslationDriver::DedicatedTable => $this->dedicatedTableStore,
+            TranslationDriver::SharedTable => $this->sharedTableStore,
         };
     }
 
