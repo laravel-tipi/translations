@@ -8,7 +8,7 @@
 >
     <testsuites>
         <testsuite name="Package">
-            <directory>tests</directory>
+            <directory>tests/Feature</directory>
         </testsuite>
     </testsuites>
 

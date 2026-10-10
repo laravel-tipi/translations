@@ -49,6 +49,7 @@
     },
     "scripts": {
         "test": "pest",
+        "benchmark": "pest tests/Benchmarks",
         "format": "pint",
         "format:test": "pint --test",
         "check": [

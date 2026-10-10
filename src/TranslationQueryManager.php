@@ -34,6 +34,50 @@ final readonly class TranslationQueryManager
         ?string $localeCode = null,
         string $boolean = 'and',
     ): Builder {
+        $model = $this->validateModelAndAttribute($query, $attribute);
+
+        $localeCode ??= $this->locales->current()->code;
+
+        return $this->driver($model)->where(
+            query: $query,
+            attribute: $attribute,
+            operator: $operator,
+            value: $value,
+            localeCode: $localeCode,
+            boolean: $boolean,
+        );
+    }
+
+    public function orderBy(
+        Builder $query,
+        string $attribute,
+        string $direction = 'asc',
+        ?string $localeCode = null,
+    ): Builder {
+        $model = $this->validateModelAndAttribute($query, $attribute);
+
+        $direction = strtolower($direction);
+
+        if (! in_array($direction, ['asc', 'desc'], true)) {
+            throw new InvalidArgumentException(
+                "Unsupported sorting direction [$direction].",
+            );
+        }
+
+        $localeCode ??= $this->locales->current()->code;
+
+        return $this->driver($model)->orderBy(
+            query: $query,
+            attribute: $attribute,
+            direction: $direction,
+            localeCode: $localeCode,
+        );
+    }
+
+    private function validateModelAndAttribute(
+        Builder $query,
+        string $attribute,
+    ): Model&TranslatableModel {
         /** @var Model&TranslatableModel $model */
         $model = $query->getModel();
 
@@ -57,16 +101,7 @@ final readonly class TranslationQueryManager
             );
         }
 
-        $localeCode ??= $this->locales->current()->code;
-
-        return $this->driver($model)->where(
-            query: $query,
-            attribute: $attribute,
-            operator: $operator,
-            value: $value,
-            localeCode: $localeCode,
-            boolean: $boolean,
-        );
+        return $model;
     }
 
     private function driver(

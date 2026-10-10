@@ -16,4 +16,11 @@ interface TranslationQueryDriver
         string $localeCode,
         string $boolean = 'and',
     ): Builder;
+
+    public function orderBy(
+        Builder $query,
+        string $attribute,
+        string $direction,
+        string $localeCode,
+    ): Builder;
 }

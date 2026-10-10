@@ -44,4 +44,19 @@ trait HasTranslationQueries
             boolean: 'or',
         );
     }
+
+    #[Scope]
+    protected function orderByTranslation(
+        Builder $query,
+        string $attribute,
+        string $direction = 'asc',
+        ?string $localeCode = null,
+    ): Builder {
+        return app(TranslationQueryManager::class)->orderBy(
+            query: $query,
+            attribute: $attribute,
+            direction: $direction,
+            localeCode: $localeCode,
+        );
+    }
 }

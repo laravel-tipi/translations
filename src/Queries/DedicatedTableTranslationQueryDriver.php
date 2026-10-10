@@ -30,4 +30,27 @@ final readonly class DedicatedTableTranslationQueryDriver implements Translation
             ),
         };
     }
+
+    public function orderBy(
+        Builder $query,
+        string $attribute,
+        string $direction,
+        string $localeCode,
+    ): Builder {
+        $relation = $query->getModel()->translationRecords();
+
+        $translation = $relation->getRelated();
+
+        return $query->orderBy(
+            $translation->newQuery()
+                ->select($attribute)
+                ->whereColumn(
+                    $relation->getQualifiedForeignKeyName(),
+                    $query->getModel()->getQualifiedKeyName(),
+                )
+                ->where('locale_code', $localeCode)
+                ->limit(1),
+            $direction,
+        );
+    }
 }

@@ -31,4 +31,23 @@ final readonly class JsonTranslationQueryDriver implements TranslationQueryDrive
             $boolean,
         );
     }
+
+    public function orderBy(
+        Builder $query,
+        string $attribute,
+        string $direction,
+        string $localeCode,
+    ): Builder {
+        $grammar = $query->getQuery()->getGrammar();
+
+        $column = $query->getModel()->qualifyColumn(
+            "$attribute->$localeCode",
+        );
+
+        $expression = $grammar->wrap($column);
+
+        return $query->orderByRaw(
+            "$expression $direction",
+        );
+    }
 }
