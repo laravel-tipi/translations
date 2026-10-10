@@ -92,11 +92,15 @@ final readonly class CreateTranslation
         );
 
         if ($translatable instanceof HasTranslationStates) {
-            $this->translationStates->create(
-                /** @var Model&TranslatableModel&HasTranslationStates $translatable */
-                translatable: $translatable,
-                localeCode: $localeCode,
-            );
+            if ($translatable->exists) {
+                $this->translationStates->create(
+                    /** @var Model&TranslatableModel&HasTranslationStates $translatable */
+                    translatable: $translatable,
+                    localeCode: $localeCode,
+                );
+            } else {
+                $translatable->queueTranslationState($localeCode);
+            }
         }
 
         return $translation;

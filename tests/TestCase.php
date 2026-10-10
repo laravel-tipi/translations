@@ -41,4 +41,11 @@ abstract class TestCase extends Orchestra
             TranslationServiceProvider::class,
         ];
     }
+
+    protected function defineDatabaseMigrations(): void
+    {
+        $this->loadMigrationsFrom(
+            __DIR__.'/../database/migrations',
+        );
+    }
 }

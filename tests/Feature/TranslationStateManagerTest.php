@@ -145,7 +145,7 @@ it('marks all other translation states as outdated', function (): void {
 
 it('sets a translation status', function (): void {
     config()->set(
-        'translation.translation_state_status_enum',
+        'translations.translation_state_status_enum',
         TranslationStatus::class,
     );
 
@@ -171,7 +171,7 @@ it('sets a translation status', function (): void {
 
 it('casts a persisted translation status to the configured enum', function (): void {
     config()->set(
-        'translation.translation_state_status_enum',
+        'translations.translation_state_status_enum',
         TranslationStatus::class,
     );
 
@@ -203,7 +203,7 @@ it('casts a persisted translation status to the configured enum', function (): v
 
 it('clears a translation status', function (): void {
     config()->set(
-        'translation.translation_state_status_enum',
+        'translations.translation_state_status_enum',
         TranslationStatus::class,
     );
 
@@ -235,17 +235,22 @@ it('clears a translation status', function (): void {
 
 it('rejects a translation state status type that is not a backed enum', function (): void {
     config()->set(
-        'translation.translation_state_status_enum',
+        'translations.translation_state_status_enum',
         stdClass::class,
     );
 
     app()->forgetInstance(TranslationConfig::class);
 
-    resolve(TranslationConfig::class);
-})->throws(
-    InvalidArgumentException::class,
-    'The translation state status enum must be a backed enum.',
-);
+    try {
+        expect(fn () => resolve(TranslationConfig::class))->toThrow(
+            InvalidArgumentException::class,
+            'The translation state status enum must be a backed enum.',
+        );
+    } finally {
+        config()->set('translations.translation_state_status_enum', null);
+        app()->forgetInstance(TranslationConfig::class);
+    }
+});
 
 it('rejects a status when no status enum is configured', function (): void {
     $article = DedicatedArticle::query()->create();
@@ -262,11 +267,14 @@ it('rejects a status when no status enum is configured', function (): void {
         localeCode: 'en',
         status: TranslationStatus::Draft,
     );
-})->throws(InvalidTranslationConfigurationException::class);
+})->throws(
+    InvalidTranslationConfigurationException::class,
+    'Translation state statuses are not configured.',
+);
 
 it('rejects a status from a different enum', function (): void {
     config()->set(
-        'translation.translation_state_status_enum',
+        'translations.translation_state_status_enum',
         TranslationStatus::class,
     );
 
@@ -286,4 +294,7 @@ it('rejects a status from a different enum', function (): void {
         localeCode: 'en',
         status: OtherTranslationStatus::Pending,
     );
-})->throws(InvalidTranslationConfigurationException::class);
+})->throws(
+    InvalidTranslationConfigurationException::class,
+    sprintf('Translation state status must be an instance of [%s].', TranslationStatus::class),
+);

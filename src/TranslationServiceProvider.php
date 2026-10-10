@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace Tipi\Translations;
 
 use BackedEnum;
-use Illuminate\Support\ServiceProvider;
 use InvalidArgumentException;
+use Spatie\LaravelPackageTools\Package;
+use Spatie\LaravelPackageTools\PackageServiceProvider;
 use Tipi\Translations\Actions\CreateTranslation;
 use Tipi\Translations\Actions\DeleteTranslation;
 use Tipi\Translations\Actions\LockTranslatable;
+use Tipi\Translations\Actions\MarkOthersAsOutdated;
 use Tipi\Translations\Actions\UpdateTranslation;
 use Tipi\Translations\Config\TranslationConfig;
 use Tipi\Translations\Contracts\LocaleProvider;
@@ -17,22 +19,27 @@ use Tipi\Translations\Stores\DedicatedTableTranslationStore;
 use Tipi\Translations\Stores\JsonTranslationStore;
 use Tipi\Translations\Stores\SharedTableTranslationStore;
 
-final class TranslationServiceProvider extends ServiceProvider
+final class TranslationServiceProvider extends PackageServiceProvider
 {
-    public function register(): void
+    public function configurePackage(Package $package): void
     {
-        $this->mergeConfigFrom(
-            __DIR__.'/../config/translation.php',
-            'translation',
-        );
+        $package
+            ->name('translations')
+            ->hasConfigFile()
+            ->hasMigrations([
+                'create_translations_table',
+                'create_translation_states_table',
+            ]);
+    }
 
+    public function packageRegistered(): void
+    {
         $this->app->singleton(
             TranslationConfig::class,
             function (): TranslationConfig {
                 $translationStateStatusEnum = config(
-                    'translation.translation_state_status_enum',
+                    'translations.translation_state_status_enum',
                 );
-
                 if (
                     $translationStateStatusEnum !== null
                     && ! is_subclass_of($translationStateStatusEnum, BackedEnum::class)
@@ -43,12 +50,12 @@ final class TranslationServiceProvider extends ServiceProvider
                 }
 
                 return new TranslationConfig(
-                    translationsTable: (string) config('translation.translations_table'),
-                    translationStatesTable: (string) config('translation.translation_states_table'),
-                    translationModel: (string) config('translation.translation_model'),
-                    translationStateModel: (string) config('translation.translation_state_model'),
+                    translationsTable: (string) config('translations.translations_table'),
+                    translationStatesTable: (string) config('translations.translation_states_table'),
+                    translationModel: (string) config('translations.translation_model'),
+                    translationStateModel: (string) config('translations.translation_state_model'),
                     translationStateStatusEnum: $translationStateStatusEnum,
-                    localeProvider: (string) config('translation.locale_provider'),
+                    localeProvider: (string) config('translations.locale_provider'),
                 );
             },
         );
@@ -65,19 +72,10 @@ final class TranslationServiceProvider extends ServiceProvider
                 resolve(TranslationConfig::class)->localeProvider,
             ),
         );
+
         $this->app->scoped(CreateTranslation::class);
         $this->app->scoped(UpdateTranslation::class);
         $this->app->scoped(DeleteTranslation::class);
-    }
-
-    public function boot(): void
-    {
-        $this->loadMigrationsFrom(
-            __DIR__.'/../database/migrations',
-        );
-
-        $this->publishes([
-            __DIR__.'/../config/translation.php' => config_path('translation.php'),
-        ], 'translation-config');
+        $this->app->scoped(MarkOthersAsOutdated::class);
     }
 }

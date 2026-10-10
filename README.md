@@ -40,7 +40,7 @@ php artisan vendor:publish --tag=translation-config
 
 ## Configuration
 
-`config/translation.php` controls package-wide infrastructure:
+`config/translations.php` controls package-wide infrastructure:
 
 ```php
 return [
