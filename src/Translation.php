@@ -11,6 +11,7 @@ final readonly class Translation
     /**
      * @param  array<string, mixed>  $attributes
      */
+
     public function __construct(
         public TranslatableModel $translatable,
         public string $localeCode,
