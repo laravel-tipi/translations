@@ -83,13 +83,15 @@ final readonly class TranslationStateManager
         Model&HasTranslationStates $translatable,
         string $localeCode,
     ): TranslationState {
-        $state = $this->getOrFail(
+        $state = $this->getOrCreate(
             translatable: $translatable,
             localeCode: $localeCode,
         );
 
-        $state->outdated_at = now();
-        $state->save();
+        if ($state->outdated_at === null) {
+            $state->outdated_at = now();
+            $state->save();
+        }
 
         return $state;
     }
@@ -98,13 +100,15 @@ final readonly class TranslationStateManager
         Model&HasTranslationStates $translatable,
         string $localeCode,
     ): TranslationState {
-        $state = $this->getOrFail(
+        $state = $this->getOrCreate(
             translatable: $translatable,
             localeCode: $localeCode,
         );
 
-        $state->outdated_at = null;
-        $state->save();
+        if ($state->outdated_at !== null) {
+            $state->outdated_at = null;
+            $state->save();
+        }
 
         return $state;
     }
@@ -118,6 +122,18 @@ final readonly class TranslationStateManager
             ->update([
                 'outdated_at' => now(),
             ]);
+    }
+
+    public function getOrCreate(
+        Model&HasTranslationStates $translatable,
+        string $localeCode,
+    ): TranslationState {
+        /** @var TranslationState $state */
+        $state = $translatable->translationStates()->firstOrCreate([
+            'locale_code' => $localeCode,
+        ]);
+
+        return $state;
     }
 
     private function getOrFail(
