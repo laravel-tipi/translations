@@ -59,6 +59,6 @@ trait InteractsWithTranslationStates
 
     public function queueTranslationState(string $localeCode): void
     {
-        $this->pendingTranslationStates[] = $localeCode;
+        $this->pendingTranslationStates[$localeCode] = true;
     }
 }
