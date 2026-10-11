@@ -54,18 +54,6 @@ trait HasLocalizedTranslations
         return parent::getAttribute($key);
     }
 
-    //    public function translated(
-    //        string $attribute,
-    //        mixed $default = null,
-    //        ?string $localeCode = null,
-    //    ): mixed {
-    //        return data_get(
-    //            target: $this->getTranslation($localeCode)?->attributes,
-    //            key: $attribute,
-    //            default: $default,
-    //        );
-    //    }
-
     public function translated(
         string $attribute,
         mixed $default = null,

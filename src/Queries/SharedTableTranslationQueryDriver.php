@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tipi\Translations\Queries;
 
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use InvalidArgumentException;
 use Tipi\Translations\Contracts\TranslationQueryDriver;
 
@@ -37,20 +38,27 @@ final readonly class SharedTableTranslationQueryDriver implements TranslationQue
         string $direction,
         string $localeCode,
     ): Builder {
+        return $query->orderBy($this->value($query, $attribute, $localeCode), $direction);
+    }
+
+    public function value(
+        Builder $query,
+        string $attribute,
+        string $localeCode,
+    ): QueryBuilder {
         $relation = $query->getModel()->translationRecords();
 
         $translation = $relation->getRelated();
 
-        return $query->orderBy(
-            $translation->newQuery()
-                ->select("values->$attribute")
-                ->whereColumn(
-                    $relation->getQualifiedForeignKeyName(),
-                    $query->getModel()->getQualifiedKeyName(),
-                )
-                ->where('locale_code', $localeCode)
-                ->limit(1),
-            $direction,
-        );
+        return $translation->newQuery()
+            ->select("values->$attribute")
+            ->whereColumn(
+                $relation->getQualifiedForeignKeyName(),
+                $query->getModel()->getQualifiedKeyName(),
+            )
+            ->where($relation->getQualifiedMorphType(), $relation->getMorphClass())
+            ->where('locale_code', $localeCode)
+            ->limit(1)
+            ->toBase();
     }
 }

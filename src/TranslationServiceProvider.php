@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Tipi\Translations;
 
 use BackedEnum;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
 use InvalidArgumentException;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
@@ -77,5 +79,27 @@ final class TranslationServiceProvider extends PackageServiceProvider
         $this->app->scoped(UpdateTranslation::class);
         $this->app->scoped(DeleteTranslation::class);
         $this->app->scoped(MarkOthersAsOutdated::class);
+    }
+
+    public function packageBooted(): void
+    {
+        Builder::macro(
+            'pluckTranslation',
+            function (
+                string $attribute,
+                string $key = 'id',
+                ?string $localeCode = null,
+                ?string $fallback = null,
+            ): Collection {
+                /** @var Builder $this */
+                return app(TranslationQueryManager::class)->pluck(
+                    query: clone $this,
+                    attribute: $attribute,
+                    key: $key,
+                    localeCode: $localeCode,
+                    fallback: $fallback,
+                );
+            },
+        );
     }
 }

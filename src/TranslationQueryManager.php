@@ -6,6 +6,8 @@ namespace Tipi\Translations;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Query\Builder as QueryBuilder;
+use Illuminate\Support\Collection;
 use InvalidArgumentException;
 use LogicException;
 use Tipi\Translations\Contracts\LocaleProvider;
@@ -72,6 +74,38 @@ final readonly class TranslationQueryManager
             direction: $direction,
             localeCode: $localeCode,
         );
+    }
+
+    public function pluck(
+        Builder $query,
+        string $attribute,
+        string $key = 'id',
+        ?string $localeCode = null,
+        ?string $fallback = null,
+    ): Collection {
+        $query = clone $query;
+        $model = $this->validateModelAndAttribute($query, $attribute);
+
+        $localeCode ??= $this->locales->current()->code;
+
+        $value = $this->driver($model)->value($query, $attribute, $localeCode);
+        $base = $query->toBase();
+        $grammar = $base->getGrammar();
+
+        $expression = $value instanceof QueryBuilder
+            ? '('.$value->toSql().')'
+            : $value->getValue($grammar);
+        $bindings = $value instanceof QueryBuilder ? $value->getBindings() : [];
+
+        if ($fallback !== null) {
+            $column = $grammar->wrap($model->qualifyColumn($fallback));
+            $expression = "coalesce($expression, $column)";
+        }
+
+        return $base
+            ->select($model->qualifyColumn($key).' as translation_key')
+            ->selectRaw($expression.' as '.$grammar->wrap('translation_value'), $bindings)
+            ->pluck('translation_value', 'translation_key');
     }
 
     private function validateModelAndAttribute(
