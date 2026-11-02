@@ -1,6 +1,6 @@
 {
     "name": "laravel-tipi/translations",
-    "description": "Flexible Eloquent model translations for Laravel with dedicated-table, shared-table, and JSON storage.",
+    "description": "Translatable Eloquent attributes for Laravel, stored in JSON columns or dedicated translation tables, with context-aware fallback.",
     "keywords": [
         "laravel",
         "localization",
@@ -20,8 +20,8 @@
         "php": "^8.5",
         "illuminate/database": "^13.0",
         "illuminate/support": "^13.0",
-        "laravel-tipi/localization": "^0.1.18",
-        "laravel-tipi/support": "^1.0",
+        "laravel-tipi/localization": "^0.2",
+        "laravel-tipi/support": "^1.0.12",
         "spatie/laravel-package-tools": "^1.93"
     },
     "require-dev": {
@@ -43,13 +43,12 @@
     "extra": {
         "laravel": {
             "providers": [
-                "Tipi\\Translations\\TranslationServiceProvider"
+                "Tipi\\Translations\\TranslationsServiceProvider"
             ]
         }
     },
     "scripts": {
         "test": "pest",
-        "benchmark": "pest tests/Benchmarks",
         "format": "pint",
         "format:test": "pint --test",
         "check": [

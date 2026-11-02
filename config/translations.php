@@ -2,29 +2,27 @@
 
 declare(strict_types=1);
 
-use Tipi\Translations\Models\Translation;
 use Tipi\Translations\Models\TranslationState;
-use Tipi\Translations\Providers\LocalizationLocaleProvider;
 
 return [
-    /*
-     * The database table used for shared translations.
-     */
-    'translations_table' => 'translations',
-
-    'translation_states_table' => 'translation_states',
 
     /*
-     * The model used for shared translations.
-     */
-    'translation_model' => Translation::class,
+    |--------------------------------------------------------------------------
+    | Translation States
+    |--------------------------------------------------------------------------
+    |
+    | Used only by models with the HasTranslationStates trait. Publish and run
+    | the "create_translation_states_table" migration to use them.
+    |
+    | "status_enum" is an optional backed enum for per-locale statuses (for
+    | example Draft / Review / Published). Leave it null to not use statuses.
+    |
+    */
 
-    'translation_state_model' => TranslationState::class,
+    'states' => [
+        'table' => 'translation_states',
+        'model' => TranslationState::class,
+        'status_enum' => null,
+    ],
 
-    'translation_state_status_enum' => null,
-
-    /*
-     * The locale provider implementation.
-     */
-    'locale_provider' => LocalizationLocaleProvider::class,
 ];
