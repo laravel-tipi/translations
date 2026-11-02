@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Illuminate\Database\Eloquent\Model;
 use Tipi\Translations\Exceptions\InvalidTranslatableModelException;
 use Tipi\Translations\Models\TranslationState;
 use Tipi\Translations\Tests\Fixtures\Enums\OtherStatus;
@@ -123,3 +124,20 @@ it('uses the existing state when another process created it meanwhile', function
     expect(TranslationState::query()->where('locale_code', 'ka')->count())->toBe(1)
         ->and(reload($article)->isTranslationOutdated('ka'))->toBeFalse();
 })->with('stateful storages');
+
+it('does not lazy load states when saving models of a collection', function (): void {
+    article(StatefulJsonArticle::class, ['en' => ['title' => 'Saperavi']]);
+    article(StatefulJsonArticle::class, ['en' => ['title' => 'Mtsvane']]);
+
+    Model::preventLazyLoading();
+
+    try {
+        foreach (StatefulJsonArticle::query()->get() as $article) {
+            $article->setTranslation('title', 'ka', 'ქართული')->save();
+        }
+    } finally {
+        Model::preventLazyLoading(false);
+    }
+
+    expect(TranslationState::query()->where('locale_code', 'ka')->count())->toBe(2);
+});

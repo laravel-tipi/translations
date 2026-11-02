@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tipi\Translations\Concerns;
 
 use BackedEnum;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -134,7 +135,7 @@ trait HasTranslationStates
                 continue;
             }
 
-            $state = $this->getRelationValue('translationStates')->firstWhere('locale_code', $locale);
+            $state = $this->loadedTranslationStates()->firstWhere('locale_code', $locale);
 
             if ($state !== null) {
                 $state->delete();
@@ -173,12 +174,27 @@ trait HasTranslationStates
     }
 
     /**
+     * The states, loaded explicitly for writes: saving must not trip
+     * Model::preventLazyLoading().
+     *
+     * @return Collection<int, TranslationState>
+     */
+    private function loadedTranslationStates(): Collection
+    {
+        if (! $this->relationLoaded('translationStates')) {
+            $this->setRelation('translationStates', $this->translationStates()->get());
+        }
+
+        return $this->getRelation('translationStates');
+    }
+
+    /**
      * The existing state, or a new unsaved one added to the loaded
      * relation.
      */
     private function translationStateFor(string $locale): TranslationState
     {
-        $states = $this->getRelationValue('translationStates');
+        $states = $this->loadedTranslationStates();
 
         $state = $states->firstWhere('locale_code', $locale);
 

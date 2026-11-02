@@ -7,6 +7,7 @@ use Illuminate\Database\QueryException;
 use Tipi\Translations\Tests\Fixtures\Models\CustomSaveJsonArticle;
 use Tipi\Translations\Tests\Fixtures\Models\CustomSaveTableArticle;
 use Tipi\Translations\Tests\Fixtures\Models\JsonArticle;
+use Tipi\Translations\Tests\Fixtures\Models\StatefulJsonArticle;
 use Tipi\Translations\Tests\Fixtures\Models\TableArticle;
 use Tipi\Translations\Tests\Fixtures\Models\UntimedJsonArticle;
 use Tipi\Translations\Tests\Fixtures\Models\UntimedTableArticle;
@@ -25,7 +26,7 @@ use Tipi\Translations\Tests\TestCase;
  */
 
 afterEach(function (): void {
-    foreach ([JsonArticle::class, TableArticle::class, UntimedJsonArticle::class, UntimedTableArticle::class] as $model) {
+    foreach ([JsonArticle::class, TableArticle::class, UntimedJsonArticle::class, UntimedTableArticle::class, StatefulJsonArticle::class] as $model) {
         $model::flushEventListeners();
     }
 });
@@ -236,6 +237,41 @@ it('never writes a failed save\'s changes once they are no longer pending', func
 
     expect(reload($article)->getTranslation('title', 'en'))->toBe('Saperavi')
         ->and($article->wasChanged('title'))->toBeFalse();
+});
+
+it('leaves a new model new when its save fails, so it can be saved again', function (string $class, string $event): void {
+    $fail = true;
+    $class::{$event}(function () use (&$fail): void {
+        if ($fail) {
+            throw new RuntimeException('Failed.');
+        }
+    });
+
+    $article = (new $class(['slug' => 'saperavi']))->setTranslation('title', 'en', 'Saperavi');
+
+    expect(fn () => $article->save())->toThrow(RuntimeException::class)
+        ->and($article->exists)->toBeFalse()
+        ->and($article->wasRecentlyCreated)->toBeFalse()
+        ->and($article->getKey())->toBeNull()
+        ->and($class::query()->count())->toBe(0);
+
+    $fail = false;
+    $article->save();
+
+    expect($class::query()->count())->toBe(1)
+        ->and(reload($article)->getTranslation('title', 'en'))->toBe('Saperavi')
+        ->and($article->isDirty())->toBeFalse();
+})->with('models')->with(['created', 'saved']);
+
+it('reloads translation states after a failed save', function (): void {
+    $article = reload(article(StatefulJsonArticle::class, ['en' => ['title' => 'Saperavi']]));
+    $article->load('translationStates');
+
+    StatefulJsonArticle::saved(fn () => throw new RuntimeException('Failed.'));
+
+    expect(fn () => $article->setTranslation('title', 'ka', 'საფერავი')->save())->toThrow(RuntimeException::class)
+        ->and($article->getTranslationState('ka'))->toBeNull()
+        ->and($article->getTranslationState('en'))->not->toBeNull();
 });
 
 it('keeps translations pending when a listener cancels the save', function (string $class, string $event): void {

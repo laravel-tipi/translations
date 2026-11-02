@@ -18,6 +18,7 @@ use Tipi\Translations\Exceptions\AttributeNotTranslatableException;
 use Tipi\Translations\Exceptions\MissingTranslationException;
 use Tipi\Translations\ResolvedTranslation;
 use Tipi\Translations\Support\TranslatableAttributes;
+use Tipi\Translations\Support\TranslatableColumnGuard;
 use Tipi\Translations\TranslationLocales;
 
 /**
@@ -149,6 +150,14 @@ trait HasTranslations
      * @param  Builder<static>  $query
      */
     abstract protected function eagerLoadTranslations(Builder $query): void;
+
+    /**
+     * Rejects queries that use a translatable attribute as a column.
+     */
+    public static function bootHasTranslations(): void
+    {
+        static::addGlobalScope(new TranslatableColumnGuard);
+    }
 
     /*
      | Declaration
@@ -426,8 +435,9 @@ trait HasTranslations
      */
 
     /**
-     * Writes the model and its translations in one transaction. A failed
-     * save leaves every change pending and the model as it was.
+     * Writes the model and its translations in one transaction. After a
+     * failure every translation change is pending again, and a new model
+     * is still new, so save() can be called again.
      */
     public function save(array $options = []): bool
     {
@@ -844,24 +854,26 @@ trait HasTranslations
     }
 
     /**
-     * What a failed save restores: the translatable columns (JSON storage)
-     * and the loaded translation relations, as they were before it.
+     * What a failed save restores: whether the model existed, its key, the
+     * translatable columns (JSON storage) and the loaded translation rows.
      *
-     * @return array{attributes: array<string, mixed>, original: array<string, mixed>, relations: array<string, mixed>}
+     * @return array{exists: bool, key: array<string, mixed>, attributes: array<string, mixed>, original: array<string, mixed>, translations: mixed}
      */
     private function translationStorageSnapshot(): array
     {
         $translatable = TranslatableAttributes::of(static::class);
 
         return [
+            'exists' => $this->exists,
+            'key' => array_intersect_key($this->attributes, [$this->getKeyName() => true]),
             'attributes' => array_intersect_key($this->attributes, $translatable),
             'original' => array_intersect_key($this->original, $translatable),
-            'relations' => array_intersect_key($this->relations, ['translations' => true, 'translationStates' => true]),
+            'translations' => $this->relations['translations'] ?? null,
         ];
     }
 
     /**
-     * @param  array{attributes: array<string, mixed>, original: array<string, mixed>, relations: array<string, mixed>}  $before
+     * @param  array{exists: bool, key: array<string, mixed>, attributes: array<string, mixed>, original: array<string, mixed>, translations: mixed}  $before
      */
     private function restoreAfterFailedSave(array $before, int $logged): void
     {
@@ -870,13 +882,22 @@ trait HasTranslations
         $this->attributes = array_replace(array_diff_key($this->attributes, $translatable), $before['attributes']);
         $this->original = array_replace(array_diff_key($this->original, $translatable), $before['original']);
 
-        foreach (['translations', 'translationStates'] as $relation) {
-            if (array_key_exists($relation, $before['relations'])) {
-                $this->setRelation($relation, $before['relations'][$relation]);
-            } else {
-                $this->unsetRelation($relation);
-            }
+        // The insert was rolled back: the model is new again.
+        if (! $before['exists'] && $this->exists) {
+            $this->exists = false;
+            $this->wasRecentlyCreated = false;
+            $this->attributes = array_replace(array_diff_key($this->attributes, [$this->getKeyName() => true]), $before['key']);
         }
+
+        // Write rows replace the loaded collection, so the old one is intact.
+        if ($before['translations'] !== null) {
+            $this->setRelation('translations', $before['translations']);
+        } else {
+            $this->unsetRelation('translations');
+        }
+
+        // State writes change the loaded states in place: load them again.
+        $this->unsetRelation('translationStates');
 
         // Changes made since take precedence over the ones rolled back.
         foreach (array_splice($this->translationWriteLog, $logged) as $changes) {

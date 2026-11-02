@@ -18,7 +18,7 @@ Wine::whereTranslation('name', 'like', '%sap%')->orderByTranslation('name')->get
 - **Two storages, one API**: JSON columns on the model's table, or a dedicated translation table.
 - **Predictable reads**: attribute access falls back; explicit methods return exactly what is stored.
 - **Context-aware fallback** using Localization's locale contexts.
-- **Atomic, concurrency-safe writes** through Eloquent's own `save()`.
+- **Atomic, concurrency-safe writes** inside Eloquent's own save lifecycle, with model events and change tracking that behave like columns.
 - **Queries** that filter, order and pluck by translated values on SQLite, MySQL, MariaDB and PostgreSQL.
 - **No N+1**: eager load once, read any locale with or without fallback for free.
 
@@ -43,7 +43,7 @@ Wine::whereTranslation('name', 'like', '%sap%')->orderByTranslation('name')->get
 
 - PHP 8.5+, Laravel 13
 - `laravel-tipi/localization` ^0.2, configured with your locales
-- SQLite, MySQL 8, MariaDB 11 or PostgreSQL 16 (others may work, but are not tested)
+- SQLite, MySQL, MariaDB or PostgreSQL. The suite runs on SQLite, MySQL 8.4, MariaDB 11 and PostgreSQL 16. Querying JSON storage needs one of these four; other databases throw a `LogicException` instead of guessing.
 
 ## Installation
 
@@ -128,7 +128,9 @@ public function translations(): HasMany
 }
 ```
 
-The translation table needs the foreign key, a `locale_code` column and one **nullable** column per translatable attribute. The unique index on the foreign key and `locale_code` is required: it keeps one row per locale and is the index every read and query uses.
+The translation table needs the foreign key, a `locale_code` column and one **nullable** column per translatable attribute. The unique index on the foreign key and `locale_code` is required: rows are written with upserts against it, it keeps one row per locale, and every read and query uses it. A foreign key constraint is strongly recommended: without one, a model deleted while another process writes its translations can leave orphaned rows.
+
+Rows are written with upsert queries, so the translation model's casts and mutators apply, but its model events and `$touches` don't run.
 
 `#[Translatable]` is inherited: a subclass of `Wine` is translatable without repeating it.
 
@@ -304,13 +306,15 @@ Writes validate eagerly: an attribute that is not translatable throws `Attribute
 
 ### Atomicity
 
-Saving a model with translation changes writes the model and all its translations **in one database transaction**. If any part fails (a translation row, a listener, a state update), nothing is written. A surrounding `DB::transaction()` is joined as usual. A `saving` listener that returns `false` stops the whole save, and the changes stay pending.
+`save()` writes the model and its translations **in one database transaction**. If anything fails (a translation write, a listener, a state update, the commit), nothing is written, and the model's translations are as they were before `save()`: every translation change is still pending, so you can fix the cause and call `save()` again. Column attributes behave as Eloquent's always do. A surrounding `DB::transaction()` is joined as usual. If *that* transaction later rolls back, the model doesn't know, exactly as with any Eloquent attribute.
 
-`saveQuietly()`, `saveOrFail()`, `push()`, `update()`, `updateQuietly()`, `create()`, `firstOrCreate()` / `updateOrCreate()` (translatable keys in the *values* argument) and model factories all store translations, because they all go through `save()`.
+A `saving`, `creating` or `updating` listener that returns `false` stops the save, and the changes stay pending.
+
+Translations are written as part of Eloquent's own save, not by a wrapper around it. So `save()`, `saveQuietly()`, `saveOrFail()`, `saveOrIgnore()`, `push()`, `update()`, `updateQuietly()`, `create()`, `firstOrCreate()` / `updateOrCreate()` (translatable keys in the *values* argument), `touch()` and model factories all store translations, with or without events.
 
 ### Change tracking and model events
 
-Unsaved translations make the model dirty, like any changed attribute:
+Translated attributes take part in Eloquent's change tracking like columns, with and without timestamps:
 
 ```php
 $wine->setTranslation('name', 'ka', 'საფერავი');
@@ -321,27 +325,48 @@ $wine->getDirtyTranslations();  // ['ka' => ['name' => 'საფერავი
 
 $wine->save();
 
+$wine->isClean();               // true
 $wine->wasChanged('name');      // true (after an update; inserts don't count, as for columns)
 ```
 
-So saving a translation-only change is an ordinary Eloquent update for both storages: `updating`, `updated`, `saving` and `saved` fire, `updated_at` changes, and `$touches` owners are touched. `discardChanges()` and `refresh()` discard unsaved translations.
+A translation-only change is an ordinary Eloquent update for both storages: `saving`, `updating`, `updated` and `saved` fire once each, `updated_at` changes (when the model has timestamps), and `$touches` owners are touched. `discardChanges()` and `refresh()` discard unsaved translations.
 
-`getDirty()`, `getChanges()` and `getOriginal()` stay **column-level**: they describe what Eloquent writes to the model's own table (raw JSON for JSON storage, nothing for table storage). Use `getDirtyTranslations()` and `getTranslation()` for translation values.
+`getDirty()`, `getChanges()` and `getOriginal()` stay **column-level**: they describe what Eloquent writes to the model's own table (raw JSON for JSON storage, nothing for table storage). Use `getDirtyTranslations()` and `wasChanged()` for translations.
 
-During `saving`, `updating`, `updated` and `saved` listeners, the translations being saved are still unsaved (`getDirtyTranslations()` lists them, and reads already show them). Table rows are written after the model row, before `save()` returns. Translations a listener changes during the save stay pending for the next `save()`: they are neither written by this save nor lost.
+**Listeners.** The save runs in this order:
+
+| Step | Translations |
+|---|---|
+| `saving`, then `creating` / `updating` listeners | changes they make are **part of this save** |
+| the model row is written, then the translations | |
+| `created` / `updated`, then `saved` listeners | already stored; `isDirty('name')`, `wasChanged('name')` and `getDirtyTranslations()` report them, as for columns |
+| after `save()` | the model is clean |
+
+Translations a `created`, `updated` or `saved` listener changes **stay pending** for the next `save()`. They are neither written behind your back nor lost, and the model stays dirty until they are saved. To store them in the same request, save from the listener, typically with `saveQuietly()` to avoid re-running your listeners. That nested save writes only the listener's changes.
 
 ### Concurrent edits
 
-Two editors working on the same model at the same time don't overwrite each other's translations:
+Concurrent saves of the same model, from separate processes, behave like this on MySQL, MariaDB and PostgreSQL:
 
-- **Table storage** writes only the changed columns of the changed locale rows. If another process inserted the same locale's row in the meantime, that row is updated instead.
-- **JSON storage** locks the row, re-reads the JSON columns and applies only the locales that changed, so a Georgian edit and a German edit saved at the same time both survive.
+| Two writers change… | Result |
+|---|---|
+| different locales | both kept |
+| different attributes of one locale | both kept |
+| a locale that didn't exist yet | one row (table storage) with both values |
+| the same value | the last commit wins |
+| one empties a locale, the other adds to it | the added value is kept |
 
-Two people changing **the same value** is last-write-wins, as with any Eloquent attribute.
+- **JSON storage** locks the model row, re-reads the JSON columns and applies only the changed values, so concurrent saves are serialized on that row.
+- **Table storage** writes each changed locale with one atomic upsert of the changed columns, and deletes an emptied row only if it is still empty when deleted.
+
+These rules are tested with concurrent processes. The package doesn't add optimistic locking: the same value saved by two editors is last-write-wins, as for any Eloquent attribute. Changes are computed from the model as you loaded it, so setting a value to what *your copy* already holds is no change, even if another process changed it meanwhile.
+
+Deadlocks and serialization failures aren't retried automatically: retrying a model save would run its events twice. The exception reaches your code, the transaction is rolled back and the changes stay pending, so `save()` can simply be called again. SQLite allows one writer at a time, so its writes never interleave.
 
 ### Other Eloquent behavior
 
 - `replicate()` copies translations, with both storages. Attributes in `$except` are left out.
+- A model may define its own `save()`. Translations are still written, but a `save()` declared on the model class replaces the package's, which adds the transaction and the recovery after a failure. Wrap your logic in a `DB::transaction()` if you need both.
 - Deleting a model deletes its translation rows. Soft deletes keep them, and `forceDelete()` removes them. With a `cascadeOnDelete()` foreign key, the database does it as well.
 
 ## Querying
@@ -383,9 +408,20 @@ The same rule as reading applies. Query scopes use the exact locale (the current
 
 On MySQL and MariaDB, JSON values are compared with the connection's collation, as table columns created on that connection are, so both storages agree. In queries, fallback works like reads: an empty string is a value and doesn't fall back.
 
-JSON storage compares values as text on MySQL, MariaDB and PostgreSQL (SQLite compares JSON numbers as numbers). Use table storage with numeric columns for numeric ranges and numeric sorting.
+**Numbers compare as numbers.** Table storage compares like its columns (an integer column compares numerically). JSON storage compares by the stored JSON type: a JSON number compared with a number (`10`, `9.5` or a numeric string like `'10'`) compares numerically, and every other value compares as text. `orderByTranslation()` sorts JSON numbers numerically, before text values. So both storages agree for numeric data on every database:
 
-Query builder writes bypass the model: `Wine::query()->update(['name' => ...])`, `insert()`, `upsert()` and lookup attributes of `firstOrCreate(['name' => ...])` refer to columns, which table storage doesn't have and JSON storage stores as whole objects. Use models, or `whereTranslation()` to find them.
+```php
+Product::whereTranslation('position', '>', 9)->get();      // 10 and 100, not "9" < "10"
+Product::orderByTranslation('position')->get();            // 9, 10, 100
+```
+
+Operands must be strings, finite numbers, backed enums (compared by value) or `Stringable` objects, and `like` needs a string. Anything else, such as a boolean or an array, throws `InvalidArgumentException` instead of being compared in some database-specific way. PostgreSQL also rejects a fractional number for an integer column of table storage, as it does with `where()`.
+
+`pluckTranslation()` returns the values a model read would return: cast by the translation model (table storage), or decoded JSON (JSON storage).
+
+**Translatable attributes aren't columns.** A `where()`, `whereIn()`, `whereNull()`, `whereColumn()` or `orderBy()` on a translatable attribute throws `TranslatableColumnQueryException`. JSON storage would compare the whole JSON object, and table storage has no such column, so these queries would fail or silently match nothing. The common trap is `Wine::firstOrCreate(['name' => 'Saperavi'])`, which would create a duplicate on every call. Look models up by a column, and put translatable attributes in the *values* argument. JSON paths such as `where('name->en', ...)` are left alone, and `withoutGlobalScope(TranslatableColumnGuard::class)` skips the check.
+
+Query builder writes (`Wine::query()->update()`, `insert()`, `upsert()`) bypass the model, as in Laravel. They write raw columns, which table storage doesn't have and JSON storage stores as whole objects. The package doesn't offer bulk translation writes; save models.
 
 ## Eager loading and performance
 
@@ -405,9 +441,11 @@ Writes stay small:
 | | New model | Changing an existing model |
 |---|---|---|
 | JSON | 1 insert | 1 locked read + 1 update |
-| Table | 1 insert + 1 per locale | 1 write per changed locale + 1 model update (`updated_at`) |
+| Table | 1 insert + 1 upsert | 1 upsert + 1 model update (`updated_at`) |
 
-Unchanged values aren't written. Setting a value back to what is stored is no change at all.
+A table-storage save writes one upsert for each set of changed attributes, so usually one for all changed locales. Removing every value of a locale adds one update and one delete. If the `translations` relation was loaded, it is reloaded after the write (one query), so the model shows exactly what is stored.
+
+Unchanged values aren't written. Setting a value back to what is stored is no change at all. On MySQL and MariaDB an upsert can use up auto-increment values without inserting a row, so keep the translation table's default 64-bit `id()`.
 
 **Don't constrain the eager-loaded relation** (`with(['translations' => fn ($q) => $q->where('locale_code', 'ka')])`). Translations are read from it, so locales left out would read as missing.
 
@@ -504,10 +542,11 @@ States are kept in sync on `save()`. A locale whose translations changed is mark
 - **Assigning in the wrong locale.** `$wine->name = ...` and `Wine::create(['name' => ...])` write the *current* locale, which in an admin panel is the editor's interface language. Use `setTranslation()` / `fillTranslations()` when the target locale isn't the current one.
 - **`null` vs `''`.** `''` is a translation and blocks fallback. Clear a value with `null` (empty form fields already arrive as `null`).
 - **Constraining eager loads** of `translations` makes the left-out locales read as missing.
-- **Overriding `save()`** on a translatable model: call `parent::save($options)`, and note that a `save()` defined directly on the model class replaces the package's transactional `save()`. Prefer model events.
+- **Overriding `save()`** on a translatable model: call `parent::save($options)`. Translations are written either way, but a `save()` declared on the model class replaces the package's transaction and failure recovery. Prefer model events.
+- **Looking up by a translatable attribute** with `where()` or `firstOrCreate()` throws: use `whereTranslation()`, and pass translations in `firstOrCreate()`'s second argument.
 - **Casting JSON translation columns** (`'name' => 'array'`) is unnecessary and should be removed: the trait reads and writes those columns itself.
 - **Locales removed from the registry.** Their stored data can't be read or written by locale (`LocaleNotFoundException`) but still appears in `getAllTranslations()`, so you can migrate or clean it up.
-- **Stale models.** A table-storage model keeps the rows it loaded, like any Eloquent relation. A JSON-storage model also picks up other processes' locales when it saves, because it merges onto a fresh read.
+- **Stale models.** A model shows what it loaded, like any Eloquent model, until it is saved or refreshed. Saving never overwrites other processes' locales or attributes. After a save, a JSON-storage model shows the merged columns, and a table-storage model with loaded `translations` reloads them.
 - **UUID or ULID keys** with translation states: change `translatable_id` in the published migration to match your key type.
 
 ## Configuration

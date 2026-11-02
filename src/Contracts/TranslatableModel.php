@@ -22,8 +22,10 @@ use Tipi\Translations\ResolvedTranslation;
  * A translation is missing when its value is null. Empty strings, 0 and
  * false are values and never trigger fallback.
  *
- * Writes are kept on the model until save(), which stores them atomically.
- * Unsaved translations make the model dirty (isDirty('name')).
+ * Writes are kept on the model until it is saved. They are written inside
+ * Eloquent's save, with the model row, in one transaction. Translated
+ * attributes take part in isDirty(), isClean() and wasChanged() like
+ * columns. Reads include unsaved changes.
  *
  * Reads that name a locale, and every write, throw
  * LocaleNotFoundException for a locale that does not exist, and
@@ -39,8 +41,9 @@ interface TranslatableModel
     public function isTranslatableAttribute(string $attribute): bool;
 
     /**
-     * The value stored for the locale (the current locale by default), or
-     * null. With $fallback, the fallback locales are tried as well.
+     * The value for the locale (the current locale by default), or null
+     * when it is missing. Exact unless $fallback is true, which tries the
+     * fallback locales as well.
      *
      * @throws AttributeNotTranslatableException
      * @throws LocaleNotFoundException
@@ -115,9 +118,10 @@ interface TranslatableModel
     public function forgetTranslations(string|Locale $locale): static;
 
     /**
-     * Changes save() has not stored yet: locale => attribute => value
-     * (null removes it). isDirty(), isClean() and wasChanged() also
-     * understand translated attributes.
+     * Changes not saved yet: locale => attribute => value (null removes
+     * it), locales in display order. Like getDirty(), it still lists the
+     * changes being saved while "created", "updated" and "saved" listeners
+     * run.
      *
      * @return array<string, array<string, mixed>>
      */
