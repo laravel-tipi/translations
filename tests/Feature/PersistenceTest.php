@@ -2,12 +2,17 @@
 
 declare(strict_types=1);
 
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Tipi\Translations\Models\TranslationState;
 use Tipi\Translations\Tests\Fixtures\Models\JsonArticle;
 use Tipi\Translations\Tests\Fixtures\Models\StatefulJsonArticle;
 use Tipi\Translations\Tests\Fixtures\Models\TableArticle;
 use Tipi\Translations\Tests\Fixtures\Models\TableArticleTranslation;
+use Tipi\Translations\Tests\Fixtures\Models\UuidArticle;
+use Tipi\Translations\Tests\Fixtures\Models\UuidArticleTranslation;
 
 afterEach(function (): void {
     foreach ([JsonArticle::class, TableArticle::class, TableArticleTranslation::class, TranslationState::class] as $model) {
@@ -27,13 +32,13 @@ it('creates a model with translations in several locales', function (string $cla
 })->with('storages');
 
 it('rolls back the model when a translation cannot be written', function (): void {
-    TableArticleTranslation::creating(fn () => throw new RuntimeException('Translation write failed.'));
+    Schema::drop('table_article_translations');
 
     $article = (new TableArticle(['slug' => 'saperavi']))->setTranslation('title', 'en', 'Saperavi');
 
-    expect(fn () => $article->save())->toThrow(RuntimeException::class, 'Translation write failed.')
+    expect(fn () => $article->save())->toThrow(QueryException::class)
         ->and(TableArticle::query()->count())->toBe(0)
-        ->and($article->isDirty())->toBeTrue();
+        ->and($article->getDirtyTranslations())->toBe(['en' => ['title' => 'Saperavi']]);
 });
 
 it('rolls back the model and its translations when a later step fails', function (): void {
@@ -49,7 +54,6 @@ it('keeps an existing model unchanged when translation writes fail', function (s
     $article = article($class, ['en' => ['title' => 'Saperavi']], ['slug' => 'before']);
 
     $class::updating(fn () => throw new RuntimeException('Update failed.'));
-    TableArticleTranslation::saving(fn () => throw new RuntimeException('Update failed.'));
 
     $article->slug = 'after';
     $article->setTranslation('title', 'en', 'Changed');
@@ -202,4 +206,42 @@ it('updates a translation row another process created meanwhile', function (): v
 
     expect(TableArticleTranslation::query()->where('locale_code', 'ka')->count())->toBe(1)
         ->and(reload($article)->getTranslations('ka'))->toBe(['title' => 'second', 'body' => 'body']);
+});
+
+it('keeps a locale another process filled meanwhile when a stale copy empties it', function (string $class): void {
+    $article = article($class, ['ka' => ['title' => 'საფერავი']]);
+
+    $stale = reload($article);
+    $stale->title; // Loads the rows: "ka" has only a title.
+
+    reload($article)->setTranslation('body', 'ka', 'წითელი')->save();
+
+    $stale->forgetTranslation('title', 'ka')->save();
+
+    expect(reload($article)->getAllTranslations())->toBe(['ka' => ['body' => 'წითელი']]);
+})->with('storages');
+
+it('stores a translation another process removed meanwhile', function (string $class): void {
+    $article = article($class, ['ka' => ['title' => 'საფერავი']]);
+
+    $stale = reload($article);
+    $stale->title;
+
+    reload($article)->forgetTranslations('ka')->save();
+
+    $stale->setTranslation('body', 'ka', 'წითელი')->save();
+
+    expect(reload($article)->getAllTranslations())->toBe(['ka' => ['body' => 'წითელი']]);
+})->with('storages');
+
+it('writes translation models with generated keys', function (): void {
+    $article = article(UuidArticle::class, ['en' => ['title' => 'Saperavi'], 'ka' => ['title' => 'საფერავი']]);
+
+    $article->setTranslation('title', 'en', 'Changed')->save();
+
+    $ids = UuidArticleTranslation::query()->pluck('id');
+
+    expect($ids)->toHaveCount(2)
+        ->and($ids->every(fn (string $id): bool => Str::isUuid($id)))->toBeTrue()
+        ->and(reload($article)->getAllTranslations())->toBe(['en' => ['title' => 'Changed'], 'ka' => ['title' => 'საფერავი']]);
 });

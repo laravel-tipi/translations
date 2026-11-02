@@ -7,8 +7,10 @@ namespace Tipi\Translations\Concerns;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\MissingAttributeException;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Collection;
 use JsonException;
 use Tipi\Translations\Exceptions\MalformedTranslationsException;
+use Tipi\Translations\Support\JsonTranslationSql;
 
 /**
  * Stores each translatable attribute in a JSON column on the model's own
@@ -17,8 +19,8 @@ use Tipi\Translations\Exceptions\MalformedTranslationsException;
  * - Reading never queries the database.
  * - Missing values are never stored: setting null removes the locale key,
  *   and a column without values is stored as NULL.
- * - Queries compare values with the connection's collation on MySQL and
- *   MariaDB, like text columns, so both storages agree.
+ * - Queries compare by the stored JSON type: numbers as numbers, other
+ *   values as text in the connection's collation, like table columns.
  * - Saving merges the changed locales into a freshly locked copy of the
  *   columns, so concurrent edits of different locales are not lost.
  *
@@ -62,7 +64,7 @@ trait HasJsonTranslations
         return ! $this->exists || array_key_exists($attribute, $this->attributes);
     }
 
-    protected function writeTranslationsBeforeSave(array $changes): void
+    protected function prepareTranslationWrite(array $changes): void
     {
         $attributes = [];
 
@@ -101,33 +103,92 @@ trait HasJsonTranslations
         }
     }
 
-    protected function writeTranslationsAfterSave(array $changes): void
+    protected function writeTranslations(array $changes): void
     {
         // Written with the model row.
     }
 
     protected function translationValueSql(Builder $query, string $attribute, string $locale): array
     {
-        $sql = $query->getQuery()->getGrammar()->wrap($this->qualifyColumn("{$attribute}->{$locale}"));
+        $column = $query->getQuery()->getGrammar()->wrap($this->qualifyColumn($attribute));
 
-        // MySQL and MariaDB return JSON strings in a binary collation, so
-        // they would compare and sort case-sensitively, unlike text
-        // columns. Use the connection's collation, as table columns do.
-        $connection = $query->getConnection();
-        $collation = $connection->getConfig('collation');
+        return [$this->jsonTranslationSql($query)->value($column, $locale), []];
+    }
 
-        if (in_array($connection->getDriverName(), ['mysql', 'mariadb'], true)
-            && is_string($collation)
-            && preg_match('/^utf8mb4_[a-z0-9_]+$/', $collation) === 1) {
-            $sql .= " collate {$collation}";
+    /**
+     * Values compare by their JSON type: numbers numerically when the
+     * operand is numeric, everything else as text.
+     */
+    protected function compareTranslationSql(Builder $query, array $value, string $operator, string|int|float $operand): array
+    {
+        $sql = $this->jsonTranslationSql($query);
+        [$expression, $bindings] = $value;
+        $text = $sql->text($expression);
+
+        if (! is_numeric($operand) || str_contains($operator, 'like')) {
+            return ["{$text} {$operator} ?", [...$bindings, (string) $operand]];
         }
 
-        return [$sql, []];
+        $number = is_string($operand) ? $operand + 0 : $operand;
+
+        return [
+            "case when {$sql->isNumber($expression)} then ({$sql->number($expression)} {$operator} {$sql->numberPlaceholder()}) else ({$text} {$operator} ?) end",
+            [...$bindings, ...$bindings, ...$bindings, $number, ...$bindings, (string) $operand],
+        ];
+    }
+
+    /**
+     * Numbers sort numerically before text, which sorts in the
+     * connection's collation.
+     */
+    protected function orderTranslationSql(Builder $query, array $value, string $direction): array
+    {
+        $sql = $this->jsonTranslationSql($query);
+        [$expression, $bindings] = $value;
+        $isNumber = $sql->isNumber($expression);
+
+        return [
+            "case when {$expression} is null then 1 else 0 end, "
+                ."case when {$isNumber} then 0 else 1 end, "
+                ."case when {$isNumber} then {$sql->number($expression)} end {$direction}, "
+                ."{$sql->text($expression)} {$direction}",
+            [...$bindings, ...$bindings, ...$bindings, ...$bindings, ...$bindings],
+        ];
+    }
+
+    /**
+     * Reads the columns and resolves them like model reads.
+     */
+    protected function pluckTranslationValues(Builder $query, string $attribute, array $locales, string $key): Collection
+    {
+        $rows = $query->toBase()
+            ->select([$key.' as tipi_translation_key', $this->qualifyColumn($attribute).' as tipi_translation_value'])
+            ->get();
+
+        return $rows->mapWithKeys(function (object $row) use ($attribute, $locales): array {
+            $translations = $this->decodeTranslations($attribute, $row->tipi_translation_value);
+            $value = null;
+
+            foreach ($locales as $locale) {
+                if (($translations[$locale] ?? null) !== null) {
+                    $value = $translations[$locale];
+
+                    break;
+                }
+            }
+
+            return [$row->tipi_translation_key => $value];
+        });
     }
 
     protected function eagerLoadTranslations(Builder $query): void
     {
         // Translations are columns of the model: nothing to load.
+    }
+
+    private function jsonTranslationSql(Builder $query): JsonTranslationSql
+    {
+        return new JsonTranslationSql($query->getConnection());
     }
 
     /**

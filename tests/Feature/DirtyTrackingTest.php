@@ -45,8 +45,8 @@ it('lists the unsaved translations', function (string $class): void {
     $article->setTranslation('title', 'ka', 'საფერავი')->forgetTranslation('body', 'en');
 
     expect($article->getDirtyTranslations())->toBe([
-        'ka' => ['title' => 'საფერავი'],
         'en' => ['body' => null],
+        'ka' => ['title' => 'საფერავი'],
     ]);
 })->with('storages');
 

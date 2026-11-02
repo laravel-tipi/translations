@@ -8,6 +8,8 @@ use Tipi\Localization\LocaleContexts;
 use Tipi\Translations\Contracts\TranslatableModel;
 use Tipi\Translations\Tests\Fixtures\Models\JsonArticle;
 use Tipi\Translations\Tests\Fixtures\Models\TableArticle;
+use Tipi\Translations\Tests\Fixtures\Models\UntimedJsonArticle;
+use Tipi\Translations\Tests\Fixtures\Models\UntimedTableArticle;
 use Tipi\Translations\Tests\TestCase;
 
 pest()->extend(TestCase::class)->in('Feature');
@@ -18,6 +20,16 @@ pest()->extend(TestCase::class)->in('Feature');
 dataset('storages', [
     'json' => JsonArticle::class,
     'table' => TableArticle::class,
+]);
+
+/*
+ | Model lifecycle behavior must not depend on timestamps either.
+ */
+dataset('models', [
+    'json' => JsonArticle::class,
+    'table' => TableArticle::class,
+    'json without timestamps' => UntimedJsonArticle::class,
+    'table without timestamps' => UntimedTableArticle::class,
 ]);
 
 /**

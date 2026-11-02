@@ -53,5 +53,27 @@ return new class extends Migration
 
             $table->unique(['cast_article_id', 'locale_code']);
         });
+
+        Schema::create('json_cast_articles', function (Blueprint $table): void {
+            $table->id();
+            $table->json('content')->nullable();
+            $table->json('position')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('uuid_articles', function (Blueprint $table): void {
+            $table->uuid('id')->primary();
+            $table->timestamps();
+        });
+
+        Schema::create('uuid_article_translations', function (Blueprint $table): void {
+            $table->uuid('id')->primary();
+            $table->foreignUuid('uuid_article_id')->constrained()->cascadeOnDelete();
+            $table->string('locale_code', 12);
+            $table->string('title')->nullable();
+            $table->timestamps();
+
+            $table->unique(['uuid_article_id', 'locale_code']);
+        });
     }
 };
