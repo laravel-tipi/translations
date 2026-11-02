@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
 use Tipi\Translations\Tests\Fixtures\Models\CustomSaveJsonArticle;
 use Tipi\Translations\Tests\Fixtures\Models\CustomSaveTableArticle;
 use Tipi\Translations\Tests\Fixtures\Models\JsonArticle;
@@ -308,3 +309,55 @@ it('writes translations when the model defines its own save()', function (string
 
     expect(reload($article)->getAllTranslations())->toBe(['en' => ['title' => 'Saperavi'], 'ka' => ['title' => 'საფერავი']]);
 })->with([CustomSaveJsonArticle::class, CustomSaveTableArticle::class]);
+
+it('follows the same rules for observer classes', function (string $class): void {
+    $observer = new class
+    {
+        /** @var list<string|null> */
+        public static array $seen = [];
+
+        public function creating(Model $model): void
+        {
+            $model->setTranslation('body', 'en', 'From the observer');
+        }
+
+        public function created(Model $model): void
+        {
+            self::$seen[] = $model->newQueryWithoutScopes()->findOrFail($model->getKey())->getTranslation('body', 'en');
+        }
+    };
+    $observer::$seen = [];
+
+    $class::observe($observer);
+
+    $article = (new $class)->setTranslation('title', 'en', 'Saperavi');
+    $article->save();
+
+    expect($observer::$seen)->toBe(['From the observer'])
+        ->and(reload($article)->getTranslations('en'))->toBe(['title' => 'Saperavi', 'body' => 'From the observer']);
+})->with('models');
+
+it('rolls back only its own savepoint when a failed save is caught inside a transaction', function (string $class): void {
+    $article = reload(article($class, ['en' => ['title' => 'Saperavi']]));
+    $other = reload(article($class, ['en' => ['title' => 'Mtsvane']]));
+
+    $class::saved(function (Model $model) use ($article): void {
+        if ($model->is($article)) {
+            throw new RuntimeException('Failed.');
+        }
+    });
+
+    DB::transaction(function () use ($article, $other): void {
+        try {
+            $article->setTranslation('title', 'ka', 'საფერავი')->save();
+        } catch (RuntimeException) {
+            // Handled: the transaction goes on.
+        }
+
+        $other->setTranslation('title', 'ka', 'მწვანე')->save();
+    });
+
+    expect(reload($article)->getAllTranslations())->toBe(['en' => ['title' => 'Saperavi']])
+        ->and($article->getDirtyTranslations())->toBe(['ka' => ['title' => 'საფერავი']])
+        ->and(reload($other)->getTranslation('title', 'ka'))->toBe('მწვანე');
+})->with('models');

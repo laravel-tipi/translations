@@ -609,6 +609,10 @@ trait HasTranslations
      * default) unless $fallback is true. A null value with "=" or "!="
      * tests for a missing or present translation.
      *
+     * Values are strings, finite numbers, backed enums or Stringable
+     * objects. Numbers compare numerically: table storage by its column
+     * types, JSON storage when the stored JSON value is a number.
+     *
      * @param  Builder<static>  $query
      */
     #[Scope]
