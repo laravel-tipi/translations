@@ -31,16 +31,20 @@ final readonly class JsonTranslationSql
     }
 
     /**
+     * The value with its bindings: the locale is always bound.
+     *
      * @param  string  $column  the wrapped column
+     * @return array{0: string, 1: list<string>}
      */
-    public function value(string $column, string $locale): string
+    public function value(string $column, string $locale): array
     {
-        $grammar = $this->connection->getQueryGrammar();
+        // A JSON path with the locale as a quoted member.
+        $path = '$."'.addcslashes($locale, '"\\').'"';
 
         return match ($this->driver) {
-            'sqlite' => "json_extract({$column}, ".$grammar->quoteString('$."'.$locale.'"').')',
-            'mysql', 'mariadb' => "nullif(json_extract({$column}, ".$grammar->quoteString('$."'.$locale.'"')."), json_extract('null', '$'))",
-            default => "nullif(({$column})::jsonb -> ".$grammar->quoteString($locale).", 'null'::jsonb)",
+            'sqlite' => ["json_extract({$column}, ?)", [$path]],
+            'mysql', 'mariadb' => ["nullif(json_extract({$column}, ?), json_extract('null', '$'))", [$path]],
+            default => ["nullif(({$column})::jsonb -> (?)::text, 'null'::jsonb)", [$locale]],
         };
     }
 

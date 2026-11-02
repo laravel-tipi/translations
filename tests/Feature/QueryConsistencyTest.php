@@ -70,3 +70,19 @@ it('does not fall back from an empty string in queries', function (string $class
         ->and($class::whereTranslation('title', '=', 'Saperavi', 'ka', fallback: true)->count())->toBe(0)
         ->and($class::pluckTranslation('title', locale: 'ka', fallback: true)->all())->toBe([$article->id => '']);
 })->with('storages');
+
+it('handles locale codes with quotes and backslashes safely', function (string $class): void {
+    $odd = 'x\'y"z\\w';
+
+    // Configured locales are validated by Localization; database rows
+    // written directly are not.
+    $this->useDatabaseLocales(['en', $odd]);
+
+    $article = article($class, [$odd => ['title' => 'Odd'], 'en' => ['title' => 'English']]);
+    article($class, ['en' => ['title' => 'Other']]);
+
+    expect($class::query()->whereTranslation('title', '=', 'Odd', $odd)->pluck('id')->all())->toBe([$article->getKey()])
+        ->and($class::query()->orderByTranslation('title', locale: $odd)->first()->is($article))->toBeTrue()
+        ->and($class::query()->pluckTranslation('title', locale: $odd)->filter()->all())->toBe([$article->getKey() => 'Odd'])
+        ->and(reload($article)->getTranslation('title', $odd))->toBe('Odd');
+})->with('storages');

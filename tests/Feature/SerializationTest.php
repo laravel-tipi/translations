@@ -81,3 +81,15 @@ it('survives PHP serialization with unsaved translations', function (string $cla
     expect($copy->getAllTranslations())->toBe($article->getAllTranslations())
         ->and($copy->isDirty())->toBeTrue();
 })->with('storages');
+
+it('keeps change tracking through PHP serialization, like columns', function (string $class): void {
+    $article = reload(article($class, ['en' => ['title' => 'Saperavi']]));
+    $article->slug = 'saperavi';
+    $article->setTranslation('title', 'ka', 'საფერავი')->save();
+
+    $copy = unserialize(serialize($article));
+
+    expect($copy->wasChanged('slug'))->toBeTrue()
+        ->and($copy->wasChanged('title'))->toBeTrue()
+        ->and($copy->isDirty())->toBeFalse();
+})->with('storages');

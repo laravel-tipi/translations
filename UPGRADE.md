@@ -90,6 +90,8 @@ $wine->forgetTranslations('ka')->save();
 - Deleting the default locale's translation is no longer forbidden by the package (`DefaultTranslationCannotBeDeletedException` is gone). Enforce it with validation if your application requires it.
 - `CreateTranslation` without a locale used the current locale. Plain assignment (`$wine->name = ...`) does that now.
 - Translations of unsaved table-storage models no longer throw: they are stored when the model is first saved.
+- Table rows are written with upsert queries against the required unique index on the foreign key and `locale_code`. The translation model's casts and mutators apply, but **its model events and `$touches` no longer run**. Move listeners on translation rows to the translatable model's events.
+- Translations are written inside Eloquent's save, so model events see them: changes made in `saving`, `creating` and `updating` listeners are saved, `created`, `updated` and `saved` listeners see them stored, and `isDirty()` / `wasChanged()` report translated attributes. See *Change tracking and model events* in the README.
 
 ### Translation states
 
@@ -119,6 +121,9 @@ The `translation_states` table is unchanged. Config keys moved:
 | `orWhereTranslation(...)`, `orderByTranslation(...)` | unchanged, plus `fallback:`. Missing values now sort last on every database |
 | `Builder::pluckTranslation($attr, $key, $locale, $fallbackColumn)` (global macro) | `Wine::pluckTranslation($attr, $key, $locale, fallback: true)` (model scope); `$fallbackColumn` is gone |
 | | new: `whereHasTranslation()`, `whereDoesntHaveTranslation()`, `withTranslations()` |
+| `where('name', ...)`, `orderBy('name')`, `firstOrCreate(['name' => ...])` on a translatable attribute | throw `TranslatableColumnQueryException`: use the scopes above, and look up `firstOrCreate()` by a column |
+
+**Behavior change:** JSON-storage queries compare JSON numbers numerically with numeric operands and sort them numerically, on every database. Operands must be strings, finite numbers, backed enums or `Stringable` objects. Booleans and arrays throw `InvalidArgumentException`.
 
 ### Locales
 

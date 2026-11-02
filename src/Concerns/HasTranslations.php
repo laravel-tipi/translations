@@ -55,10 +55,11 @@ trait HasTranslations
 
     /**
      * Translated attributes changed by the last update: attribute => true.
+     * Protected, so it survives PHP serialization like $changes.
      *
      * @var array<string, true>
      */
-    private array $changedTranslatedAttributes = [];
+    protected array $changedTranslatedAttributes = [];
 
     /**
      * Changes written by the save() calls in progress, to make pending
@@ -729,21 +730,13 @@ trait HasTranslations
      * The value for the locale, including unsaved changes. Null when
      * missing.
      */
-    protected function translationValue(string $attribute, string $locale): mixed
+    private function translationValue(string $attribute, string $locale): mixed
     {
         if (isset($this->translationChanges[$locale]) && array_key_exists($attribute, $this->translationChanges[$locale])) {
             return $this->translationChanges[$locale][$attribute];
         }
 
         return $this->storedTranslation($attribute, $locale);
-    }
-
-    /**
-     * @return array<string, array<string, mixed>>
-     */
-    protected function translationChanges(): array
-    {
-        return $this->translationChanges;
     }
 
     protected function translationLocales(): TranslationLocales

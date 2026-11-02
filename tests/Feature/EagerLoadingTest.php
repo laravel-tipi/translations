@@ -101,7 +101,8 @@ it('writes a new model and its translations in a bounded number of queries', fun
 })->with([
     // One insert.
     'json' => [JsonArticle::class, 1],
-    // One insert for the model, one per locale.
+    // The model, one upsert per set of changed attributes ("title, body"
+    // for en and ka, "title" for de), and a reload of the loaded rows.
     'table' => [TableArticle::class, 4],
 ]);
 
@@ -117,6 +118,6 @@ it('updates an existing model in a bounded number of queries', function (string 
 })->with([
     // Locked read of the column, then the update.
     'json' => [JsonArticle::class, 2],
-    // Update one row, insert one row, touch updated_at.
+    // Touch updated_at, one upsert for both locales, reload the rows.
     'table' => [TableArticle::class, 3],
 ]);

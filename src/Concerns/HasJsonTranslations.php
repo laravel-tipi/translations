@@ -112,7 +112,7 @@ trait HasJsonTranslations
     {
         $column = $query->getQuery()->getGrammar()->wrap($this->qualifyColumn($attribute));
 
-        return [$this->jsonTranslationSql($query)->value($column, $locale), []];
+        return $this->jsonTranslationSql($query)->value($column, $locale);
     }
 
     /**
@@ -123,17 +123,20 @@ trait HasJsonTranslations
     {
         $sql = $this->jsonTranslationSql($query);
         [$expression, $bindings] = $value;
-        $text = $sql->text($expression);
+
+        // Each use of the expression repeats its bindings.
+        $text = [$sql->text($expression), $bindings];
 
         if (! is_numeric($operand) || str_contains($operator, 'like')) {
-            return ["{$text} {$operator} ?", [...$bindings, (string) $operand]];
+            return ["{$text[0]} {$operator} ?", [...$text[1], (string) $operand]];
         }
 
-        $number = is_string($operand) ? $operand + 0 : $operand;
+        $isNumber = [$sql->isNumber($expression), $bindings];
+        $number = [$sql->number($expression), $bindings];
 
         return [
-            "case when {$sql->isNumber($expression)} then ({$sql->number($expression)} {$operator} {$sql->numberPlaceholder()}) else ({$text} {$operator} ?) end",
-            [...$bindings, ...$bindings, ...$bindings, $number, ...$bindings, (string) $operand],
+            "case when {$isNumber[0]} then ({$number[0]} {$operator} {$sql->numberPlaceholder()}) else ({$text[0]} {$operator} ?) end",
+            [...$isNumber[1], ...$number[1], is_string($operand) ? $operand + 0 : $operand, ...$text[1], (string) $operand],
         ];
     }
 
@@ -147,6 +150,7 @@ trait HasJsonTranslations
         [$expression, $bindings] = $value;
         $isNumber = $sql->isNumber($expression);
 
+        // The expression is used five times; each use repeats its bindings.
         return [
             "case when {$expression} is null then 1 else 0 end, "
                 ."case when {$isNumber} then 0 else 1 end, "
