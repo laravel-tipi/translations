@@ -18,8 +18,6 @@ use Tipi\Translations\Exceptions\TranslatableColumnQueryException;
  *
  * Registered as a global scope, so it sees every clause just before the
  * query runs. withoutGlobalScope(TranslatableColumnGuard::class) skips it.
- *
- * @internal
  */
 final class TranslatableColumnGuard implements Scope
 {
