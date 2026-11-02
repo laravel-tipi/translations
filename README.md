@@ -6,7 +6,7 @@ Translatable Eloquent attributes for Laravel 13, built on [`laravel-tipi/localiz
 #[Translatable(['name', 'description'])]
 class Wine extends Model implements TranslatableModel
 {
-    use HasTableTranslations; // or HasJsonTranslations
+    use HasTableTranslations; // or HasJsonTranslations, or HasSharedTableTranslations
 }
 
 $wine->name;                                   // "საფერავი", or the fallback when Georgian is missing
@@ -15,7 +15,7 @@ $wine->setTranslation('name', 'ka', 'საფერავი')->save();
 Wine::whereTranslation('name', 'like', '%sap%')->orderByTranslation('name')->get();
 ```
 
-- **Two storages, one API**: JSON columns on the model's table, or a dedicated translation table.
+- **Three storages, one API**: JSON columns on the model's table, a dedicated translation table per model, or one shared polymorphic table for every model.
 - **Predictable reads**: attribute access falls back; explicit methods return exactly what is stored.
 - **Context-aware fallback** using Localization's locale contexts.
 - **Atomic, concurrency-safe writes** inside Eloquent's own save lifecycle, with model events and change tracking that behave like columns.
@@ -25,11 +25,12 @@ Wine::whereTranslation('name', 'like', '%sap%')->orderByTranslation('name')->get
 ## Contents
 
 - [Installation](#installation)
-- [Making a model translatable](#making-a-model-translatable)
+- [Making a model translatable](#making-a-model-translatable): JSON, table and shared storage
 - [Reading translations](#reading-translations) — implicit vs. explicit access
 - [Missing translations](#missing-translations)
 - [Fallback](#fallback)
 - [Writing translations](#writing-translations)
+- [Deleting models](#deleting-models)
 - [Querying](#querying)
 - [Eager loading and performance](#eager-loading-and-performance)
 - [Serialization and APIs](#serialization-and-apis)
@@ -43,7 +44,7 @@ Wine::whereTranslation('name', 'like', '%sap%')->orderByTranslation('name')->get
 
 - PHP 8.5+, Laravel 13
 - `laravel-tipi/localization` ^0.2, configured with your locales
-- SQLite, MySQL, MariaDB or PostgreSQL. The suite runs on SQLite, MySQL 8.4, MariaDB 11 and PostgreSQL 16. Querying JSON storage needs one of these four; other databases throw a `LogicException` instead of guessing.
+- SQLite, MySQL, MariaDB or PostgreSQL. The suite runs on SQLite, MySQL 8.4, MariaDB 11 and PostgreSQL 16. Querying JSON and shared storage needs one of these four; other databases throw a `LogicException` instead of guessing.
 
 ## Installation
 
@@ -51,7 +52,15 @@ Wine::whereTranslation('name', 'like', '%sap%')->orderByTranslation('name')->get
 composer require laravel-tipi/translations
 ```
 
-That is all for the storages. Configuration and a migration are needed only for [translation states](#translation-states).
+That is all for JSON and table storage. [Shared storage](#shared-storage) and [translation states](#translation-states) use the package's tables:
+
+```bash
+php artisan vendor:publish --tag=translations-config       # optional, see Configuration
+php artisan vendor:publish --tag=translations-migrations   # create_translations_table, create_translation_states_table
+php artisan migrate
+```
+
+Delete the migration you don't need before migrating. Both create polymorphic tables whose `translatable_id` column follows [`morph_key_type`](#model-keys-and-morph-types): set it first if your models use UUID or ULID keys.
 
 Locales come from Localization: configure them there (`config/localization.php`). Translations does not define locales of its own.
 
@@ -110,7 +119,7 @@ class WineTranslation extends Model
 Schema::create('wine_translations', function (Blueprint $table) {
     $table->id();
     $table->foreignId('wine_id')->constrained()->cascadeOnDelete();
-    $table->string('locale_code', 12);
+    $table->string('locale_code', 16);
     $table->string('name')->nullable();
     $table->text('description')->nullable();
     $table->timestamps();
@@ -128,9 +137,62 @@ public function translations(): HasMany
 }
 ```
 
-The translation table needs the foreign key, a `locale_code` column and one **nullable** column per translatable attribute. The unique index on the foreign key and `locale_code` is required: rows are written with upserts against it, it keeps one row per locale, and every read and query uses it. A foreign key constraint is strongly recommended: without one, a model deleted while another process writes its translations can leave orphaned rows.
+The translation table needs the foreign key, a `locale_code` column (16 characters fit every locale code Localization accepts) and one **nullable** column per translatable attribute. The unique index on the foreign key and `locale_code` is required: rows are written with upserts against it, it keeps one row per locale, and every read and query uses it. A foreign key constraint with `cascadeOnDelete()` is recommended: the package deletes rows with the model, and the constraint also covers deletes that bypass Eloquent.
 
 Rows are written with upsert queries, so the translation model's casts and mutators apply, but its model events and `$touches` don't run.
+
+### Shared storage
+
+Every model's translations live in one polymorphic table, one row per model, locale and attribute. No translation table or model per model, and no migration when you make another model translatable or add an attribute.
+
+```php
+use Tipi\Translations\Concerns\HasSharedTableTranslations;
+
+#[Translatable(['name', 'description'])]
+class Region extends Model implements TranslatableModel
+{
+    use HasSharedTableTranslations;
+}
+```
+
+Publish and run the `create_translations_table` migration (see [Installation](#installation)). The table has `translatable_type`, `translatable_id`, `locale_code`, `attribute`, a JSON `value` and timestamps, with a unique index on the first four.
+
+- Values are JSON, as in JSON storage: strings, numbers, booleans and arrays keep their type, and queries compare them the same way. There are no per-attribute casts or column types.
+- The rows are the `translations` relation (`MorphMany` of `Tipi\Translations\Models\Translation`). Eager load it like table storage's.
+- `translatable_type` is the model's [morph class](https://laravel.com/docs/eloquent-relationships#custom-polymorphic-types): the class name, or its alias in the morph map. Use a morph map (`Relation::enforceMorphMap()`) so renaming a class doesn't strand its rows. A subclass is its own morph class unless mapped, so its rows are separate from its parent's.
+- The `Translation` model is for reading across models (reports, exports, "everything missing in Georgian"). Write through the translatable models.
+
+#### Model keys and morph types
+
+`translatable_id` has one type per table, set by `morph_key_type` in `config/translations.php` before migrating. It applies to the shared table and the translation states table.
+
+| `morph_key_type` | Column | Models |
+|---|---|---|
+| `null` (default) | follows Laravel's default morph key type (`Schema::morphUsingUuids()` / `morphUsingUlids()`), else `int` | |
+| `'int'` | unsigned big integer | integer keys |
+| `'uuid'` | `uuid` (native on PostgreSQL and MariaDB) | UUID keys (`HasUuids`) |
+| `'ulid'` | `char(26)` | ULID keys (`HasUlids`) |
+| `'string'` | `varchar(64)` | **any mix** of integer, UUID, ULID and string keys |
+
+Use `'string'` when your translatable models mix key types. Keys are then stored and compared as strings: the package's relation casts the model's key in its subqueries, so PostgreSQL's strict typing and MySQL's indexes both work, including in `has()`, `whereHas()` and `withCount()`. A model whose key type or value doesn't fit the column throws `InvalidTranslatableModelException` before any query, because databases would otherwise reject it, find nothing or store a wrong value depending on the engine.
+
+`morph_key_type` must match the columns: change it only together with them.
+
+#### Integrity without a foreign key
+
+A polymorphic table can't have a foreign key. The package makes up for it where it can:
+
+- Deleting a model deletes its rows (and translation states) in the same transaction, also with events disabled (`deleteQuietly()`). Soft deletes keep them; `forceDelete()` removes them.
+- Writing translations locks the model's row first. A model deleted by another process while you edit it can't get rows: `save()` throws `ModelNotFoundException`, as a foreign key would fail the insert, and your changes stay pending.
+
+Rows are still left behind when a model is deleted **without Eloquent**: `Region::query()->delete()`, raw SQL, `DB::table(...)`, or a database cascade from another table. Remove them with:
+
+```bash
+php artisan translations:prune-orphans --pretend   # count them
+php artisan translations:prune-orphans             # delete them
+```
+
+It checks every type in the shared and states tables against its model's table, and skips (and reports) types without a model class, so it never deletes data it can't verify. Schedule it if your application deletes models in bulk.
 
 `#[Translatable]` is inherited: a subclass of `Wine` is translatable without repeating it.
 
@@ -206,7 +268,7 @@ Explicit reads accept a locale code or a `Tipi\Support\Locale` object, and defau
 
 ## Missing translations
 
-One rule applies to both storages: **a translation is missing when its value is `null`**.
+One rule applies to every storage: **a translation is missing when its value is `null`**.
 
 | Stored situation | `getTranslation()` | `hasTranslation()` | `$wine->name` |
 |---|---|---|---|
@@ -217,7 +279,7 @@ One rule applies to both storages: **a translation is missing when its value is 
 | `'0'`, `0`, `false`, `[]` | the value | `true` | the value, no fallback |
 | Found through fallback | `null` without `fallback: true` | `false` | the fallback value |
 
-- `null` is never stored. Setting a value to `null` removes it. For JSON storage the locale key is removed, and for table storage a row with no values left is deleted. "Has no value" and "was set to null" can't be told apart, so the package doesn't pretend they can.
+- `null` is never stored. Setting a value to `null` removes it. For JSON storage the locale key is removed, for table storage a row with no values left is deleted, and for shared storage the value's row is deleted. "Has no value" and "was set to null" can't be told apart, so the package doesn't pretend they can.
 - Falsy values are real translations. An intentionally empty string stays empty and doesn't show the English text instead.
 - Laravel's `ConvertEmptyStringsToNull` middleware turns empty form fields into `null`, so a cleared form field removes the translation and enables fallback. That is usually what you want.
 
@@ -329,9 +391,9 @@ $wine->isClean();               // true
 $wine->wasChanged('name');      // true (after an update; inserts don't count, as for columns)
 ```
 
-A translation-only change is an ordinary Eloquent update for both storages: `saving`, `updating`, `updated` and `saved` fire once each, `updated_at` changes (when the model has timestamps), and `$touches` owners are touched. `discardChanges()` and `refresh()` discard unsaved translations.
+A translation-only change is an ordinary Eloquent update in every storage: `saving`, `updating`, `updated` and `saved` fire once each, `updated_at` changes (when the model has timestamps), and `$touches` owners are touched. `discardChanges()` and `refresh()` discard unsaved translations.
 
-`getDirty()`, `getChanges()` and `getOriginal()` stay **column-level**: they describe what Eloquent writes to the model's own table (raw JSON for JSON storage, nothing for table storage). Use `getDirtyTranslations()` and `wasChanged()` for translations.
+`getDirty()`, `getChanges()` and `getOriginal()` stay **column-level**: they describe what Eloquent writes to the model's own table (raw JSON for JSON storage, nothing for table and shared storage). Use `getDirtyTranslations()` and `wasChanged()` for translations.
 
 **Listeners.** The save runs in this order:
 
@@ -355,19 +417,32 @@ Concurrent saves of the same model, from separate processes, behave like this on
 | a locale that didn't exist yet | one row (table storage) with both values |
 | the same value | the last commit wins |
 | one empties a locale, the other adds to it | the added value is kept |
+| one deletes the model, the other saves translations | no rows are left; the save fails with `ModelNotFoundException` if the model was gone first |
 
 - **JSON storage** locks the model row, re-reads the JSON columns and applies only the changed values, so concurrent saves are serialized on that row.
-- **Table storage** writes each changed locale with one atomic upsert of the changed columns, and deletes an emptied row only if it is still empty when deleted.
+- **Table storage** locks the model row, then writes each changed locale with one atomic upsert of the changed columns, and deletes an emptied row only if it is still empty when deleted.
+- **Shared storage** locks the model row, then writes every changed value with one atomic upsert (each value is its own row) and deletes removed values. It never reads rows with locks, so writers of *different* models sharing the table don't block each other.
 
-These rules are tested with concurrent processes. The package doesn't add optimistic locking: the same value saved by two editors is last-write-wins, as for any Eloquent attribute. Changes are computed from the model as you loaded it, so setting a value to what *your copy* already holds is no change, even if another process changed it meanwhile.
+Each storage locks the model's row before writing rows, and `delete()` locks it before deleting them, so a model is never deleted between the check and the write. These rules are tested with concurrent processes on MySQL, MariaDB and PostgreSQL, including many writers on different models of one shared table. The package doesn't add optimistic locking: the same value saved by two editors is last-write-wins, as for any Eloquent attribute. Changes are computed from the model as you loaded it, so setting a value to what *your copy* already holds is no change, even if another process changed it meanwhile.
 
-Deadlocks and serialization failures aren't retried automatically: retrying a model save would run its events twice. The exception reaches your code, the transaction is rolled back and the changes stay pending, so `save()` can simply be called again. SQLite allows one writer at a time, so its writes never interleave.
+Deadlocks and serialization failures aren't retried automatically: retrying a model save would run its events twice. The exception reaches your code, the transaction is rolled back and the changes stay pending, so `save()` can simply be called again. Transactions that save several models in different orders can deadlock like any such transactions; `DB::transaction($callback, attempts: 3)` retries them (start each attempt from fresh models). SQLite allows one writer at a time, so its writes never interleave.
 
 ### Other Eloquent behavior
 
-- `replicate()` copies translations, with both storages. Attributes in `$except` are left out.
+- `replicate()` copies translations, in every storage. Attributes in `$except` are left out.
 - A model may define its own `save()`. Translations are still written, but a `save()` declared on the model class replaces the package's, which adds the transaction and the recovery after a failure. Wrap your logic in a `DB::transaction()` if you need both.
-- Deleting a model deletes its translation rows. Soft deletes keep them, and `forceDelete()` removes them. With a `cascadeOnDelete()` foreign key, the database does it as well.
+- The model and its translation rows must use one database connection, so they share a transaction and lock. Rows follow the model's connection (`Model::on('tenant')`) unless the translation model sets its own, which throws `InvalidTranslatableModelException` on write. Run the package's migrations on every connection that uses them.
+
+## Deleting models
+
+`delete()` deletes the model and the rows that hold its translations (table and shared storage, translation states) **in one transaction**:
+
+- the rows go only once `deleting` listeners allowed the delete, and if anything fails later (the model's row, a `deleted` listener, a surrounding transaction), they are restored with it;
+- it works with events disabled (`deleteQuietly()`, `forceDeleteQuietly()`);
+- soft deletes keep everything, `restore()` brings the model back with its translations, `forceDelete()` removes them;
+- JSON storage needs nothing: the translations are the model's row.
+
+Deletes that bypass Eloquent (query builder, raw SQL) don't touch translation rows. Table storage's foreign key with `cascadeOnDelete()` covers them; for shared storage and states, run [`translations:prune-orphans`](#integrity-without-a-foreign-key).
 
 ## Querying
 
@@ -398,7 +473,7 @@ Wine::active()->pluckTranslation('name', 'slug', fallback: true);
 
 The same rule as reading applies. Query scopes use the exact locale (the current one by default) unless you pass `fallback: true`, and then they use the same fallback chain as attribute access. Values are always bound, never interpolated. Operators and directions are checked against a fixed list.
 
-**Both storages give the same answers on the same database.** Case sensitivity and sort order follow the database:
+**Every storage gives the same answers on the same database.** Case sensitivity and sort order follow the database:
 
 | Database | `=` | `like` | Case-insensitive search |
 |---|---|---|---|
@@ -406,9 +481,9 @@ The same rule as reading applies. Query scopes use the exact locale (the current
 | PostgreSQL | case-sensitive | case-sensitive | `ilike` |
 | SQLite | case-sensitive | case-insensitive for ASCII | `like` |
 
-On MySQL and MariaDB, JSON values are compared with the connection's collation, as table columns created on that connection are, so both storages agree. In queries, fallback works like reads: an empty string is a value and doesn't fall back.
+On MySQL and MariaDB, JSON values are compared with the connection's collation, as table columns created on that connection are, so the storages agree. In queries, fallback works like reads: an empty string is a value and doesn't fall back.
 
-**Numbers compare as numbers.** Table storage compares like its columns (an integer column compares numerically). JSON storage compares by the stored JSON type: a JSON number compared with a number (`10`, `9.5` or a numeric string like `'10'`) compares numerically, and every other value compares as text. `orderByTranslation()` sorts JSON numbers numerically, before text values. So both storages agree for numeric data on every database:
+**Numbers compare as numbers.** Table storage compares like its columns (an integer column compares numerically). JSON and shared storage compare by the stored JSON type: a JSON number compared with a number (`10`, `9.5` or a numeric string like `'10'`) compares numerically, and every other value compares as text. `orderByTranslation()` sorts JSON numbers numerically, before text values. So the storages agree for numeric data on every database:
 
 ```php
 Product::whereTranslation('position', '>', 9)->get();      // 10 and 100, not "9" < "10"
@@ -417,17 +492,19 @@ Product::orderByTranslation('position')->get();            // 9, 10, 100
 
 Operands must be strings, finite numbers, backed enums (compared by value) or `Stringable` objects, and `like` needs a string. Anything else, such as a boolean or an array, throws `InvalidArgumentException` instead of being compared in some database-specific way. PostgreSQL also rejects a fractional number for an integer column of table storage, as it does with `where()`.
 
-`pluckTranslation()` returns the values a model read would return: cast by the translation model (table storage), or decoded JSON (JSON storage).
+`pluckTranslation()` returns the values a model read would return: cast by the translation model (table storage), or decoded JSON (JSON and shared storage).
+
+MySQL and PostgreSQL normalize JSON objects, so an array value's keys may come back in another order (JSON and shared storage). Compare such values by content, not order.
 
 **Translatable attributes aren't columns.** A `where()`, `whereIn()`, `whereNull()`, `whereColumn()` or `orderBy()` on a translatable attribute throws `TranslatableColumnQueryException`. JSON storage would compare the whole JSON object, and table storage has no such column, so these queries would fail or silently match nothing. The common trap is `Wine::firstOrCreate(['name' => 'Saperavi'])`, which would create a duplicate on every call. Look models up by a column, and put translatable attributes in the *values* argument. JSON paths such as `where('name->en', ...)` are left alone, and `withoutGlobalScope(TranslatableColumnGuard::class)` skips the check.
 
-Query builder writes (`Wine::query()->update()`, `insert()`, `upsert()`) bypass the model, as in Laravel. They write raw columns, which table storage doesn't have and JSON storage stores as whole objects. The package doesn't offer bulk translation writes; save models.
+Query builder writes (`Wine::query()->update()`, `insert()`, `upsert()`) bypass the model, as in Laravel. They write raw columns, which table and shared storage don't have and JSON storage stores as whole objects. The package doesn't offer bulk translation writes; save models.
 
 ## Eager loading and performance
 
 **JSON storage** never queries: translations arrive with the model.
 
-**Table storage** reads from the `translations` relation. Eager load it when reading many models:
+**Table and shared storage** read from the `translations` relation. Eager load it when reading many models:
 
 ```php
 $wines = Wine::with('translations')->get();   // 2 queries, however many wines
@@ -441,9 +518,10 @@ Writes stay small:
 | | New model | Changing an existing model |
 |---|---|---|
 | JSON | 1 insert | 1 locked read + 1 update |
-| Table | 1 insert + 1 upsert | 1 upsert + 1 model update (`updated_at`) |
+| Table | 1 insert + 1 upsert | 1 model update (`updated_at`) + 1 row lock + 1 upsert |
+| Shared | 1 insert + 1 upsert | 1 model update (`updated_at`) + 1 row lock + 1 upsert |
 
-A table-storage save writes one upsert for each set of changed attributes, so usually one for all changed locales. Removing every value of a locale adds one update and one delete. If the `translations` relation was loaded, it is reloaded after the write (one query), so the model shows exactly what is stored.
+A table-storage save writes one upsert for each set of changed attributes, so usually one for all changed locales. Removing every value of a locale adds one update and one delete. A shared-storage save writes one upsert for all set values and one delete for all removed values. Deleting a model costs one row lock and one delete per translation table. If the `translations` relation was loaded, it is reloaded after the write (one query), so the model shows exactly what is stored.
 
 Unchanged values aren't written. Setting a value back to what is stored is no change at all. On MySQL and MariaDB an upsert can use up auto-increment values without inserting a row, so keep the translation table's default 64-bit `id()`.
 
@@ -451,7 +529,7 @@ Unchanged values aren't written. Setting a value back to what is stored is no ch
 
 ## Serialization and APIs
 
-`toArray()` and `toJson()` serialize translatable attributes exactly like `$wine->name`: the current locale, with fallback. `$hidden`, `$visible` and `makeHidden()` apply as usual. Both storages produce the same output: the raw JSON columns and the `translations` rows are not included (`makeVisible('translations')` if you do want the rows).
+`toArray()` and `toJson()` serialize translatable attributes exactly like `$wine->name`: the current locale, with fallback. `$hidden`, `$visible` and `makeHidden()` apply as usual. Every storage produces the same output: the raw JSON columns and the `translations` rows are not included (`makeVisible('translations')` if you do want the rows).
 
 For an API that returns every translation, use `getAllTranslations()`. It has the same shape `fillTranslations()` accepts, so a payload round-trips:
 
@@ -488,17 +566,30 @@ Authorization is your application's: use policies as for any model. The package 
 
 ## Choosing a storage
 
-| | JSON | Table |
-|---|---|---|
-| Schema | one JSON column per attribute | a translation table and model |
-| Reads | no queries | one query per model, or one per batch when eager loaded |
-| Value types | JSON values (string, number, bool, array) | the column type, with the translation model's casts |
-| Adding a locale | nothing to migrate | nothing to migrate |
-| Indexing translated values | hard (generated columns) | regular indexes on columns |
-| Query performance on large tables | JSON extraction per row | indexed subqueries |
-| Best for | small models, lookups, settings, taxonomies | content: products, articles, anything searched or sorted |
+| | JSON | Table | Shared |
+|---|---|---|---|
+| Schema | one JSON column per attribute | a translation table and model per translatable model | one table for every model, migrated once |
+| Adding a translatable model or attribute | a column | a table / a column | nothing |
+| Reads | no queries | one query per model, or one per batch when eager loaded | same as table |
+| Value types | JSON values | the column types, with the translation model's casts | JSON values |
+| Database constraints | none per locale | foreign key with cascade, `NOT NULL`, lengths, column types | unique key only; deletes handled by the package |
+| Filtering and sorting large sets | JSON extraction per row | indexed subquery per row; columns can be indexed for your own queries | indexed subquery per row and expression |
+| Concurrency | writers of one model serialize on its row | per-locale upserts | per-value upserts |
+| Cross-model tooling (progress, exports, "missing in Georgian") | per table | per table | one query on one table |
+| Best for | small models, settings, taxonomies; fastest reads | content that is searched, sorted or constrained: products, articles | many translatable models, packages and CMS-like apps, translation workflows |
 
-Both have the same API, so you can change a model's storage later without changing the code that uses it (you migrate the data yourself).
+**Measured** with the package's benchmark (`vendor/bin/pest tests/Benchmarks`), 20,000 models per storage, two attributes in three locales, and 30,000 other models' rows in the shared table. Median milliseconds:
+
+| | JSON | Table | Shared |
+|---|---|---|---|
+| Eager load 100 models, read every locale (MySQL / PostgreSQL) | 3 / 1 | 5 / 5 | 8 / 8 |
+| `whereTranslation('name', '=', …)` over all models | 6 / 9 | 21 / 14 | 46 / 39 |
+| `orderByTranslation()`, first 20 | 23 / 39 | 43 / 28 | 176 / 220 |
+| Save one value of an existing model | 1.5 / 1.4 | 2.2 / 2.2 | 2.7 / 2.3 |
+
+Reads of loaded models and writes cost about the same everywhere. Filtering and sorting by translated values scan the models and grow linearly with them in every storage. Shared storage pays most there, because each row needs index lookups into a large table, so sorting thousands of models by a translated value is noticeably slower. Rows of other models in the shared table don't slow these down: lookups use the unique index.
+
+All three have the same API, so you can change a model's storage later without changing the code that uses it (you migrate the data yourself). Models with different storages work side by side.
 
 ## Translation states
 
@@ -536,6 +627,8 @@ $wine->markTranslationCurrent('ka');
 
 States are kept in sync on `save()`. A locale whose translations changed is marked current, because someone just edited it. A locale that lost all its values loses its state. An already outdated locale keeps the time it became outdated. States are deleted with the model, and kept on soft delete.
 
+The states table is polymorphic, like shared storage: its `translatable_id` follows [`morph_key_type`](#model-keys-and-morph-types), and [`translations:prune-orphans`](#integrity-without-a-foreign-key) cleans up after deletes that bypass Eloquent.
+
 ## Common mistakes and edge cases
 
 - **Filling edit forms with `$wine->name`.** It returns the fallback text when the locale is missing, and saving the form would store English text as the Georgian translation. Fill forms with `getTranslation($attribute, $locale)` or `getTranslations($locale)`.
@@ -547,13 +640,22 @@ States are kept in sync on `save()`. A locale whose translations changed is mark
 - **Casting JSON translation columns** (`'name' => 'array'`) is unnecessary and should be removed: the trait reads and writes those columns itself.
 - **Locales removed from the registry.** Their stored data can't be read or written by locale (`LocaleNotFoundException`) but still appears in `getAllTranslations()`, so you can migrate or clean it up.
 - **Stale models.** A model shows what it loaded, like any Eloquent model, until it is saved or refreshed. Saving never overwrites other processes' locales or attributes. After a save, a JSON-storage model shows the merged columns, and a table-storage model with loaded `translations` reloads them.
-- **UUID or ULID keys** with translation states: change `translatable_id` in the published migration to match your key type.
+- **UUID or ULID keys** with shared storage or translation states: set [`morph_key_type`](#model-keys-and-morph-types) before running the migrations. Use `'string'` if your models mix key types.
+- **Renaming a model class** with shared storage or states strands its rows unless the type is in the morph map. Map translatable models from the start.
+- **Bulk deletes** (`Model::query()->delete()`) skip the package: run `translations:prune-orphans` for shared storage and states.
 
 ## Configuration
 
-`config/translations.php` (publish with `--tag=translations-config`) only configures translation states:
+`config/translations.php` (publish with `--tag=translations-config`) configures the package's own tables:
 
 ```php
+'shared' => [
+    'table' => 'translations',
+    'model' => \Tipi\Translations\Models\Translation::class, // or a subclass
+],
+
+'morph_key_type' => null, // 'int', 'uuid', 'ulid' or 'string'; null follows Laravel's default
+
 'states' => [
     'table' => 'translation_states',
     'model' => \Tipi\Translations\Models\TranslationState::class,
@@ -561,7 +663,7 @@ States are kept in sync on `save()`. A locale whose translations changed is mark
 ],
 ```
 
-Everything else is declared on the model.
+The migrations read the table names and key type when they run. Everything else is declared on the model.
 
 ## Development
 
@@ -569,7 +671,9 @@ Everything else is declared on the model.
 composer check            # Pint + the test suite (SQLite)
 ```
 
-Run the suite against a real server with `TRANSLATIONS_TEST_DB` (`mysql`, `mariadb` or `pgsql`) plus `TRANSLATIONS_TEST_DB_HOST`, `_PORT`, `_DATABASE`, `_USERNAME` and `_PASSWORD`. CI runs all four databases.
+Run the suite against a real server with `TRANSLATIONS_TEST_DB` (`mysql`, `mariadb` or `pgsql`) plus `TRANSLATIONS_TEST_DB_HOST`, `_PORT`, `_DATABASE`, `_USERNAME` and `_PASSWORD`. CI runs all four databases. The concurrency tests run separate processes and need the `pcntl` extension and a server database.
+
+`vendor/bin/pest tests/Benchmarks` compares the storages on the configured database (`BENCH_MODELS` and `BENCH_NOISE` set the data size).
 
 ## License
 

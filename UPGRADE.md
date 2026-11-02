@@ -2,7 +2,7 @@
 
 ## From 0.1 to 0.2
 
-0.2 is a redesign. The model API replaces the actions, managers and stores, Localization 0.2 replaces the package's own locale provider, and the shared-table storage is gone. There are no compatibility aliases. This guide maps the old API to the new one.
+0.2 is a redesign. The model API replaces the actions, managers and stores, Localization 0.2 replaces the package's own locale provider, and shared-table storage is rebuilt with a new table layout. There are no compatibility aliases. This guide maps the old API to the new one.
 
 ### Requirements
 
@@ -16,7 +16,7 @@
 | `protected static array $translatableAttributes = [...]` | `#[Translatable([...])]` on the class |
 | `implements DedicatedTableTranslatableModel` + `use HasDedicatedTableTranslations` | `implements TranslatableModel` + `use HasTableTranslations` |
 | `implements JsonTranslatableModel` + `use HasJsonTranslations` | `implements TranslatableModel` + `use HasJsonTranslations` |
-| `implements SharedTableTranslatableModel` + `use HasSharedTableTranslations` | removed: use table or JSON storage |
+| `implements SharedTableTranslatableModel` + `use HasSharedTableTranslations` | `implements TranslatableModel` + `use HasSharedTableTranslations`; upgrade the table (see [Shared-table data](#shared-table-data)) |
 | `static::$translationModel` | define the `translations()` relation on the model |
 | translation model `implements TranslationModel` + `use IsTranslation` | a plain Eloquent model: remove both |
 | `implements HasTranslationStates` + `use InteractsWithTranslationStates` | `use HasTranslationStates` (no interface) |
@@ -104,14 +104,17 @@ $wine->forgetTranslations('ka')->save();
 | state created by `CreateTranslation`, current on `UpdateTranslation` | kept in sync by `save()` for every changed locale |
 | `markOthersAsOutdated` overwrote `outdated_at` | an already outdated locale keeps its original `outdated_at` |
 
-The `translation_states` table is unchanged. Config keys moved:
+The `translation_states` table works unchanged. Its `translatable_id` is an integer column, so keep `morph_key_type` at `null` or `'int'`, and set it to `'int'` explicitly if your application calls `Schema::morphUsingUuids()` or `morphUsingUlids()` (0.2 follows Laravel's default morph key type, 0.1 ignored it). New installations create `locale_code` with 16 characters instead of 255. Config keys moved:
 
 | 0.1 | 0.2 |
 |---|---|
 | `translations.translation_states_table` | `translations.states.table` |
 | `translations.translation_state_model` | `translations.states.model` |
 | `translations.translation_state_status_enum` | `translations.states.status_enum` |
-| `translations.translations_table`, `translation_model`, `locale_provider` | removed |
+| `translations.translations_table` | `translations.shared.table` |
+| `translations.translation_model` | `translations.shared.model` (must extend `Tipi\Translations\Models\Translation`) |
+| `translations.locale_provider` | removed |
+| | new: `translations.morph_key_type` |
 
 ### Querying
 
@@ -123,7 +126,7 @@ The `translation_states` table is unchanged. Config keys moved:
 | | new: `whereHasTranslation()`, `whereDoesntHaveTranslation()`, `withTranslations()` |
 | `where('name', ...)`, `orderBy('name')`, `firstOrCreate(['name' => ...])` on a translatable attribute | throw `TranslatableColumnQueryException`: use the scopes above, and look up `firstOrCreate()` by a column |
 
-**Behavior change:** JSON-storage queries compare JSON numbers numerically with numeric operands and sort them numerically, on every database. Operands must be strings, finite numbers, backed enums or `Stringable` objects. Booleans and arrays throw `InvalidArgumentException`.
+**Behavior change:** JSON- and shared-storage queries compare JSON numbers numerically with numeric operands and sort them numerically, on every database. Operands must be strings, finite numbers, backed enums or `Stringable` objects. Booleans and arrays throw `InvalidArgumentException`.
 
 ### Locales
 
@@ -144,8 +147,40 @@ Unknown locales now throw Localization's `LocaleNotFoundException`.
 
 ### Removed classes
 
-Actions (`CreateTranslation`, `UpdateTranslation`, `DeleteTranslation`, `LockTranslatable`, `MarkOthersAsOutdated`), `TranslationManager`, `TranslationQueryManager`, `TranslationStateManager`, `TranslationDriverResolver`, `Enums\TranslationDriver`, `Config\TranslationConfig`, `Translation` (DTO), `Models\Translation`, the three stores and three query drivers, `Providers\LocalizationLocaleProvider`, the contracts `LocaleProvider`, `TranslatableModel` (old shape), `TableTranslatableModel`, `DedicatedTableTranslatableModel`, `SharedTableTranslatableModel`, `JsonTranslatableModel`, `TranslationModel`, `HasTranslationStates` (interface), `TranslationQueryDriver`, the traits `HasDedicatedTableTranslations`, `HasSharedTableTranslations`, `HasLocalizedTranslations`, `HasTranslationQueries`, `InteractsWithTranslationStates`, `IsTranslation`, `HasTranslatablePolicy`, and the exceptions `DefaultTranslationCannotBeDeletedException`, `EmptyTranslationException`, `InvalidTranslationAttributeException` (now `AttributeNotTranslatableException`), `InvalidTranslationConfigurationException` (now `InvalidTranslatableModelException`), `TranslationAlreadyExistsException`, `TranslationDoesNotExistException`, `TranslationConfigurationException`. `TranslationException` is now an interface.
+Actions (`CreateTranslation`, `UpdateTranslation`, `DeleteTranslation`, `LockTranslatable`, `MarkOthersAsOutdated`), `TranslationManager`, `TranslationQueryManager`, `TranslationStateManager`, `TranslationDriverResolver`, `Enums\TranslationDriver`, `Config\TranslationConfig`, `Translation` (DTO), the three stores and three query drivers, `Providers\LocalizationLocaleProvider`, the contracts `LocaleProvider`, `TranslatableModel` (old shape), `TableTranslatableModel`, `DedicatedTableTranslatableModel`, `SharedTableTranslatableModel`, `JsonTranslatableModel`, `TranslationModel`, `HasTranslationStates` (interface), `TranslationQueryDriver`, the traits `HasDedicatedTableTranslations`, `HasLocalizedTranslations`, `HasTranslationQueries`, `InteractsWithTranslationStates`, `IsTranslation`, `HasTranslatablePolicy`, and the exceptions `DefaultTranslationCannotBeDeletedException`, `EmptyTranslationException`, `InvalidTranslationAttributeException` (now `AttributeNotTranslatableException`), `InvalidTranslationConfigurationException` (now `InvalidTranslatableModelException`), `TranslationAlreadyExistsException`, `TranslationDoesNotExistException`, `TranslationConfigurationException`. `TranslationException` is now an interface.
 
 ### Shared-table data
 
-If you used shared-table storage, move the data before upgrading: create a translation table per model (or JSON columns) and copy each `translations` row's `values` into it. The package no longer ships the `translations` table migration, and it does not drop your existing table.
+Shared storage now stores **one row per model, locale and attribute** with a JSON `value`, instead of one row per model and locale with a `values` object. One row per value lets concurrent writers use plain upserts: the old layout needed a locked read of each locale's row before merging, and on MySQL and MariaDB those locks deadlock writers of *different* models that share the table.
+
+The package ships a migration that converts a 0.1 table without deleting anything:
+
+```bash
+php artisan vendor:publish --tag=translations-upgrade-v0.1
+php artisan migrate
+```
+
+It creates the new table, copies every non-null value into it (keeping the rows' timestamps), renames the 0.1 table to `translations_v0_1` and the new one to `translations`. Check the result, then drop `translations_v0_1` yourself. Rolling the migration back restores the 0.1 table (and drops translations written since). It does nothing if the table isn't a 0.1 table, and it stops without renaming anything if a row's `values` isn't a JSON object.
+
+What carries over and what doesn't:
+
+| 0.1 | 0.2 |
+|---|---|
+| `translatable_type` | copied as is, so morph map aliases keep working |
+| `translatable_id` (unsigned big integer) | copied; `morph_key_type` must be `null`/`'int'`, or `'string'` (the migration refuses `'uuid'` and `'ulid'`) |
+| `locale_code` (255 characters) | copied into a 16-character column, the longest code Localization accepts |
+| `values` keys and values | one row each; `null` values are skipped (they are missing translations) |
+| `outdated_at` (releases before 0.1.15) | not copied: it stays in `translations_v0_1`. 0.1.16 moved outdated tracking to `translation_states` |
+| the unique index (any name) | the new table has `translations_owner_unique` on type, id, locale and attribute |
+
+On MySQL and MariaDB the migration of releases before 0.1.15 failed after creating the table (its index name was too long), so such tables may lack the unique index. The upgrade only reads the columns and works for them too.
+
+### Published migrations
+
+Your published 0.1 migrations (`create_translations_table`, `create_translation_states_table`) call `Tipi\Translations\Config\TranslationConfig`, which 0.2 removes. Existing databases are unaffected, since those migrations have already run, but **migrating a fresh database (tests, CI, new environments) fails**. Re-publish them:
+
+```bash
+php artisan vendor:publish --tag=translations-migrations --force
+```
+
+This replaces the files in place (same names, so they stay recorded as run) with the 0.2 versions, and fresh databases get the 0.2 tables directly. The upgrade migration then finds nothing to convert there. Delete `create_translations_table` if you don't use shared storage.
