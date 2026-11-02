@@ -17,6 +17,8 @@ use Tipi\Translations\Exceptions\MalformedTranslationsException;
  * - Reading never queries the database.
  * - Missing values are never stored: setting null removes the locale key,
  *   and a column without values is stored as NULL.
+ * - Queries compare values with the connection's collation on MySQL and
+ *   MariaDB, like text columns, so both storages agree.
  * - Saving merges the changed locales into a freshly locked copy of the
  *   columns, so concurrent edits of different locales are not lost.
  *
@@ -44,7 +46,7 @@ trait HasJsonTranslations
     {
         $translations = [];
 
-        foreach ($this->translatableAttributes() as $attribute) {
+        foreach ($this->getTranslatableAttributes() as $attribute) {
             foreach ($this->decodedTranslations($attribute) as $locale => $value) {
                 if ($value !== null) {
                     $translations[$locale][$attribute] = $value;
@@ -99,14 +101,28 @@ trait HasJsonTranslations
         }
     }
 
-    protected function writeTranslationsAfterSave(array $changes): bool
+    protected function writeTranslationsAfterSave(array $changes): void
     {
-        return false;
+        // Written with the model row.
     }
 
     protected function translationValueSql(Builder $query, string $attribute, string $locale): array
     {
-        return [$query->getQuery()->getGrammar()->wrap($this->qualifyColumn("{$attribute}->{$locale}")), []];
+        $sql = $query->getQuery()->getGrammar()->wrap($this->qualifyColumn("{$attribute}->{$locale}"));
+
+        // MySQL and MariaDB return JSON strings in a binary collation, so
+        // they would compare and sort case-sensitively, unlike text
+        // columns. Use the connection's collation, as table columns do.
+        $connection = $query->getConnection();
+        $collation = $connection->getConfig('collation');
+
+        if (in_array($connection->getDriverName(), ['mysql', 'mariadb'], true)
+            && is_string($collation)
+            && preg_match('/^utf8mb4_[a-z0-9_]+$/', $collation) === 1) {
+            $sql .= " collate {$collation}";
+        }
+
+        return [$sql, []];
     }
 
     protected function eagerLoadTranslations(Builder $query): void

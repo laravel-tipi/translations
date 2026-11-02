@@ -23,6 +23,7 @@ use Tipi\Translations\ResolvedTranslation;
  * false are values and never trigger fallback.
  *
  * Writes are kept on the model until save(), which stores them atomically.
+ * Unsaved translations make the model dirty (isDirty('name')).
  *
  * Reads that name a locale, and every write, throw
  * LocaleNotFoundException for a locale that does not exist, and
@@ -33,7 +34,7 @@ interface TranslatableModel
     /**
      * @return list<string>
      */
-    public function translatableAttributes(): array;
+    public function getTranslatableAttributes(): array;
 
     public function isTranslatableAttribute(string $attribute): bool;
 
@@ -114,7 +115,11 @@ interface TranslatableModel
     public function forgetTranslations(string|Locale $locale): static;
 
     /**
-     * Whether there are translation changes that save() has not stored yet.
+     * Changes save() has not stored yet: locale => attribute => value
+     * (null removes it). isDirty(), isClean() and wasChanged() also
+     * understand translated attributes.
+     *
+     * @return array<string, array<string, mixed>>
      */
-    public function hasUnsavedTranslations(): bool;
+    public function getDirtyTranslations(): array;
 }

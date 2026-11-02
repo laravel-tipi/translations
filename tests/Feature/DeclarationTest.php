@@ -16,13 +16,13 @@ it('lists the declared attributes in declaration order', function (string $class
     $article = new $class;
 
     expect($article)->toBeInstanceOf(TranslatableModel::class)
-        ->and($article->translatableAttributes())->toBe(['title', 'body'])
+        ->and($article->getTranslatableAttributes())->toBe(['title', 'body'])
         ->and($article->isTranslatableAttribute('title'))->toBeTrue()
         ->and($article->isTranslatableAttribute('slug'))->toBeFalse();
 })->with('storages');
 
 it('inherits the declaration from a parent model', function (): void {
-    expect((new StatefulTableArticle)->translatableAttributes())->toBe(['title', 'body']);
+    expect((new StatefulTableArticle)->getTranslatableAttributes())->toBe(['title', 'body']);
 });
 
 it('leaves other attributes to Eloquent', function (string $class): void {
@@ -32,7 +32,7 @@ it('leaves other attributes to Eloquent', function (string $class): void {
 })->with('storages');
 
 it('requires a declaration', function (): void {
-    (new UndeclaredArticle)->translatableAttributes();
+    (new UndeclaredArticle)->getTranslatableAttributes();
 })->throws(InvalidTranslatableModelException::class, 'does not declare its translatable attributes');
 
 it('rejects invalid declarations', function (array $attributes, string $message): void {
@@ -57,7 +57,7 @@ it('rejects an empty declaration on a model', function (): void {
         use HasJsonTranslations;
     };
 
-    $model->translatableAttributes();
+    $model->getTranslatableAttributes();
 })->throws(InvalidTranslatableModelException::class, 'the list is empty');
 
 it('requires the translation model for table storage', function (): void {

@@ -9,7 +9,7 @@ A redesign around a small model API and Localization 0.2.
 ### Added
 
 - `#[Translatable([...])]` attribute to declare translatable attributes. It is inherited by subclasses.
-- A single `TranslatableModel` contract for both storages: `getTranslation()`, `getTranslationOrFail()`, `resolveTranslation()`, `hasTranslation()`, `getTranslations()`, `getAllTranslations()`, `getTranslatedLocales()`, `setTranslation()`, `setTranslations()`, `fillTranslations()`, `forgetTranslation()`, `forgetTranslations()`, `hasUnsavedTranslations()`.
+- A single `TranslatableModel` contract for both storages: `getTranslation()`, `getTranslationOrFail()`, `resolveTranslation()`, `hasTranslation()`, `getTranslations()`, `getAllTranslations()`, `getTranslatedLocales()`, `setTranslation()`, `setTranslations()`, `fillTranslations()`, `forgetTranslation()`, `forgetTranslations()`, `getDirtyTranslations()`, `getTranslatableAttributes()`, `isTranslatableAttribute()`.
 - Attribute access (`$model->name`) falls back: requested locale → current context default → global default.
 - Explicit reads are exact by default, with `fallback: true` to opt in.
 - `ResolvedTranslation` reports whether a value is translated, a fallback or missing, and which locale it came from.
@@ -21,7 +21,10 @@ A redesign around a small model API and Localization 0.2.
 - `orderByTranslation()` sorts missing values last on every database.
 - `Rules\Translations` validation rule for translation payloads, optionally limited to a locale context.
 - `HasTranslationStates` trait with `getTranslationState()`, `isTranslationOutdated()`, `markTranslationOutdated()`, `markTranslationCurrent()`, `markOtherTranslationsOutdated()` and `setTranslationStatus()`. States are kept in sync on `save()`.
-- `replicate()` copies translations for both storages, and `updated_at` reflects translation changes for both storages.
+- `isDirty()`, `isClean()` and `wasChanged()` understand translated attributes. A translation-only save is a normal Eloquent update for both storages: update events fire, `updated_at` changes and `$touches` owners are touched. `discardChanges()` and `refresh()` discard unsaved translations.
+- Translations changed by model event listeners during a save stay pending instead of being lost.
+- `replicate()` copies translations for both storages.
+- JSON-storage queries use the connection collation on MySQL and MariaDB, so both storages compare and sort the same way.
 - The test suite runs on SQLite, MySQL, MariaDB and PostgreSQL, including query-count tests.
 
 ### Changed

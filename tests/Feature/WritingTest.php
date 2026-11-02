@@ -89,7 +89,7 @@ it('reads unsaved changes before saving', function (string $class): void {
 
     useLocale('ka');
 
-    expect($article->hasUnsavedTranslations())->toBeTrue()
+    expect($article->isDirty())->toBeTrue()
         ->and($article->title)->toBe('საფერავი')
         ->and($article->body)->toBeNull()
         ->and($article->getTranslatedLocales())->toBe(['en', 'ka'])
@@ -98,7 +98,7 @@ it('reads unsaved changes before saving', function (string $class): void {
 
     $article->save();
 
-    expect($article->hasUnsavedTranslations())->toBeFalse()
+    expect($article->isDirty())->toBeFalse()
         ->and(reload($article)->getAllTranslations())->toBe($article->getAllTranslations());
 })->with('storages');
 
@@ -108,7 +108,7 @@ it('does not record a change that restores the stored value', function (string $
     $article->setTranslation('title', 'en', 'Changed')->setTranslation('title', 'en', 'Saperavi');
     $article->setTranslation('body', 'ka', null);
 
-    expect($article->hasUnsavedTranslations())->toBeFalse();
+    expect($article->isDirty())->toBeFalse();
 })->with('storages');
 
 it('rejects attributes that are not translatable', function (string $class): void {
@@ -117,7 +117,7 @@ it('rejects attributes that are not translatable', function (string $class): voi
     expect(fn () => $article->setTranslation('slug', 'en', 'x'))->toThrow(AttributeNotTranslatableException::class)
         ->and(fn () => $article->setTranslations('en', ['title' => 'Title', 'slug' => 'x']))->toThrow(AttributeNotTranslatableException::class)
         ->and(fn () => $article->fillTranslations(['en' => ['slug' => 'x']]))->toThrow(AttributeNotTranslatableException::class)
-        ->and($article->hasUnsavedTranslations())->toBeFalse();
+        ->and($article->isDirty())->toBeFalse();
 })->with('storages');
 
 it('rejects locales that do not exist', function (string $class): void {
@@ -126,7 +126,7 @@ it('rejects locales that do not exist', function (string $class): void {
     expect(fn () => $article->setTranslation('title', 'xx', 'x'))->toThrow(LocaleNotFoundException::class)
         ->and(fn () => $article->fillTranslations(['en' => ['title' => 'Title'], 'xx' => ['title' => 'x']]))->toThrow(LocaleNotFoundException::class)
         ->and(fn () => $article->forgetTranslations('xx'))->toThrow(LocaleNotFoundException::class)
-        ->and($article->hasUnsavedTranslations())->toBeFalse();
+        ->and($article->isDirty())->toBeFalse();
 })->with('storages');
 
 it('rejects a malformed translations payload', function (string $class): void {

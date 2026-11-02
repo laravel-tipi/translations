@@ -93,7 +93,7 @@ trait HasTableTranslations
         $translations = [];
 
         foreach ($this->translationRows() as $locale => $row) {
-            foreach ($this->translatableAttributes() as $attribute) {
+            foreach ($this->getTranslatableAttributes() as $attribute) {
                 $value = $row->getAttribute($attribute);
 
                 if ($value !== null) {
@@ -115,7 +115,7 @@ trait HasTableTranslations
         // Rows need the model's key, so they are written after it is saved.
     }
 
-    protected function writeTranslationsAfterSave(array $changes): bool
+    protected function writeTranslationsAfterSave(array $changes): void
     {
         if ($this->relationLoaded('translations')) {
             $loaded = $this->getRelation('translations');
@@ -128,8 +128,6 @@ trait HasTableTranslations
                 ->keyBy('locale_code')
                 ->all();
         }
-
-        $written = false;
 
         foreach ($changes as $locale => $values) {
             $locale = (string) $locale;
@@ -144,7 +142,6 @@ trait HasTableTranslations
 
                 $inserted = $this->insertTranslationRow($locale, $values);
                 $loaded?->push($inserted);
-                $written = true;
 
                 continue;
             }
@@ -159,20 +156,15 @@ trait HasTableTranslations
                     $this->setRelation('translations', $loaded);
                 }
 
-                $written = true;
-
                 continue;
             }
 
             if ($row->isDirty()) {
                 $row->save();
-                $written = true;
             }
         }
 
         $this->indexedTranslationRows = null;
-
-        return $written;
     }
 
     protected function translationValueSql(Builder $query, string $attribute, string $locale): array
@@ -241,7 +233,7 @@ trait HasTableTranslations
 
     private function translationRowIsEmpty(Model $row): bool
     {
-        foreach ($this->translatableAttributes() as $attribute) {
+        foreach ($this->getTranslatableAttributes() as $attribute) {
             if ($row->getAttribute($attribute) !== null) {
                 return false;
             }

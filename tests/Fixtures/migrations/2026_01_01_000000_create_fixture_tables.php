@@ -21,6 +21,7 @@ return new class extends Migration
 
         Schema::create('table_articles', function (Blueprint $table): void {
             $table->id();
+            $table->foreignId('parent_id')->nullable();
             $table->string('slug')->nullable();
             $table->timestamps();
             $table->softDeletes();

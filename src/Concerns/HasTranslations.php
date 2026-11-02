@@ -9,12 +9,12 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 use InvalidArgumentException;
-use Throwable;
 use Tipi\Support\Locale;
 use Tipi\Translations\Contracts\TranslatableModel;
 use Tipi\Translations\Exceptions\AttributeNotTranslatableException;
 use Tipi\Translations\Exceptions\MissingTranslationException;
 use Tipi\Translations\ResolvedTranslation;
+use Tipi\Translations\Support\SaveHalted;
 use Tipi\Translations\Support\TranslatableAttributes;
 use Tipi\Translations\TranslationLocales;
 
@@ -35,6 +35,20 @@ trait HasTranslations
      * @var array<string, array<string, mixed>>
      */
     protected array $translationChanges = [];
+
+    /**
+     * The changes the current save() is writing, while it runs.
+     *
+     * @var array<string, array<string, mixed>>|null
+     */
+    private ?array $translationChangesBeingSaved = null;
+
+    /**
+     * Translated attributes changed by the last update: attribute => true.
+     *
+     * @var array<string, true>
+     */
+    private array $changedTranslatedAttributes = [];
 
     /*
      | Storage primitives, implemented by the storage traits.
@@ -67,11 +81,10 @@ trait HasTranslations
 
     /**
      * Runs inside the save transaction, after the model row is written.
-     * Returns whether anything was written.
      *
      * @param  array<string, array<string, mixed>>  $changes
      */
-    abstract protected function writeTranslationsAfterSave(array $changes): bool;
+    abstract protected function writeTranslationsAfterSave(array $changes): void;
 
     /**
      * SQL that yields the stored value for one locale, with its bindings.
@@ -93,7 +106,7 @@ trait HasTranslations
     /**
      * @return list<string>
      */
-    public function translatableAttributes(): array
+    public function getTranslatableAttributes(): array
     {
         return array_keys(TranslatableAttributes::of(static::class));
     }
@@ -258,9 +271,14 @@ trait HasTranslations
         return array_keys($this->getAllTranslations());
     }
 
-    public function hasUnsavedTranslations(): bool
+    /**
+     * Unsaved changes: locale => attribute => value (null removes it).
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    public function getDirtyTranslations(): array
     {
-        return $this->translationChanges !== [];
+        return $this->translationChanges;
     }
 
     /*
@@ -351,25 +369,63 @@ trait HasTranslations
             return parent::save($options);
         }
 
-        $connection = $this->getConnection();
-
-        $connection->beginTransaction();
-
         try {
-            $saved = $this->saveWithTranslations($options);
-        } catch (Throwable $exception) {
-            $connection->rollBack();
+            return $this->getConnection()->transaction(function () use ($options): bool {
+                if (! $this->saveWithTranslations($options)) {
+                    throw new SaveHalted;
+                }
 
-            throw $exception;
+                return true;
+            });
+        } catch (SaveHalted) {
+            return false;
+        }
+    }
+
+    /**
+     * Unsaved translations make the model dirty, so Eloquent updates it
+     * (timestamps, "updating"/"updated" events, touched owners) even when
+     * only table-stored translations changed. getDirty() stays column-level:
+     * it is what Eloquent writes.
+     */
+    public function isDirty($attributes = null): bool
+    {
+        $attributes = is_array($attributes) ? $attributes : func_get_args();
+
+        return parent::isDirty($attributes) || $this->hasChanges($this->dirtyTranslatedAttributes(), $attributes);
+    }
+
+    /**
+     * Whether the last update changed the attributes, translated ones
+     * included. Like for columns, inserts do not count.
+     */
+    public function wasChanged($attributes = null): bool
+    {
+        $attributes = is_array($attributes) ? $attributes : func_get_args();
+
+        return parent::wasChanged($attributes) || $this->hasChanges($this->changedTranslatedAttributes, $attributes);
+    }
+
+    public function syncChanges(): static
+    {
+        parent::syncChanges();
+
+        $this->changedTranslatedAttributes = [];
+
+        foreach ($this->translationChangesBeingSaved ?? [] as $values) {
+            $this->changedTranslatedAttributes += array_fill_keys(array_keys($values), true);
         }
 
-        if ($saved) {
-            $connection->commit();
-        } else {
-            $connection->rollBack();
-        }
+        return $this;
+    }
 
-        return $saved;
+    public function discardChanges(): static
+    {
+        parent::discardChanges();
+
+        $this->translationChanges = [];
+
+        return $this;
     }
 
     /**
@@ -604,26 +660,30 @@ trait HasTranslations
         return $this;
     }
 
+    /**
+     * Writes the changes pending when save() was called. Changes that
+     * model event listeners make during the save stay pending for the next
+     * save(), and changes a nested save() already wrote are not written
+     * again.
+     */
     private function saveWithTranslations(array $options): bool
     {
         $changes = $this->translationChanges;
+        $this->translationChangesBeingSaved = $changes;
 
-        $this->writeTranslationsBeforeSave($changes);
+        try {
+            $this->writeTranslationsBeforeSave($changes);
 
-        $modelWillBeWritten = ! $this->exists || $this->isDirty();
+            if (! parent::save($options)) {
+                return false;
+            }
 
-        if (! parent::save($options)) {
-            return false;
-        }
+            $unsaved = $this->stillPending($changes);
 
-        $translationsWritten = $this->writeTranslationsAfterSave($changes);
-
-        $this->translationChanges = [];
-
-        // Keep updated_at meaningful when only table-stored translations
-        // changed, as it is for JSON-stored ones.
-        if ($translationsWritten && ! $modelWillBeWritten && $this->usesTimestamps()) {
-            $this->touchQuietly();
+            $this->writeTranslationsAfterSave($unsaved);
+            $this->forgetPending($unsaved);
+        } finally {
+            $this->translationChangesBeingSaved = null;
         }
 
         if (method_exists($this, 'syncTranslationStates')) {
@@ -631,6 +691,59 @@ trait HasTranslations
         }
 
         return true;
+    }
+
+    /**
+     * The given changes that are still pending with the same value.
+     *
+     * @param  array<string, array<string, mixed>>  $changes
+     * @return array<string, array<string, mixed>>
+     */
+    private function stillPending(array $changes): array
+    {
+        $pending = [];
+
+        foreach ($changes as $locale => $values) {
+            foreach ($values as $attribute => $value) {
+                if (isset($this->translationChanges[$locale])
+                    && array_key_exists($attribute, $this->translationChanges[$locale])
+                    && $this->translationChanges[$locale][$attribute] === $value) {
+                    $pending[$locale][$attribute] = $value;
+                }
+            }
+        }
+
+        return $pending;
+    }
+
+    /**
+     * @param  array<string, array<string, mixed>>  $changes
+     */
+    private function forgetPending(array $changes): void
+    {
+        foreach ($changes as $locale => $values) {
+            foreach (array_keys($values) as $attribute) {
+                unset($this->translationChanges[$locale][$attribute]);
+            }
+
+            if (($this->translationChanges[$locale] ?? null) === []) {
+                unset($this->translationChanges[$locale]);
+            }
+        }
+    }
+
+    /**
+     * @return array<string, true>
+     */
+    private function dirtyTranslatedAttributes(): array
+    {
+        $attributes = [];
+
+        foreach ($this->translationChanges as $values) {
+            $attributes += array_fill_keys(array_keys($values), true);
+        }
+
+        return $attributes;
     }
 
     private function ensureTranslatable(string $attribute): void

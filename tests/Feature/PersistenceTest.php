@@ -33,7 +33,7 @@ it('rolls back the model when a translation cannot be written', function (): voi
 
     expect(fn () => $article->save())->toThrow(RuntimeException::class, 'Translation write failed.')
         ->and(TableArticle::query()->count())->toBe(0)
-        ->and($article->hasUnsavedTranslations())->toBeTrue();
+        ->and($article->isDirty())->toBeTrue();
 });
 
 it('rolls back the model and its translations when a later step fails', function (): void {
@@ -68,7 +68,7 @@ it('does not write translations when a saving listener halts the save', function
     $article = (new $class)->setTranslation('title', 'en', 'Saperavi');
 
     expect($article->save())->toBeFalse()
-        ->and($article->hasUnsavedTranslations())->toBeTrue()
+        ->and($article->isDirty())->toBeTrue()
         ->and($class::query()->count())->toBe(0)
         ->and(TableArticleTranslation::query()->count())->toBe(0);
 })->with('storages');
@@ -97,7 +97,7 @@ it('discards unsaved translations on refresh()', function (string $class): void 
 
     $article->setTranslation('title', 'en', 'Changed')->refresh();
 
-    expect($article->hasUnsavedTranslations())->toBeFalse()
+    expect($article->isDirty())->toBeFalse()
         ->and($article->title)->toBe('Saperavi');
 })->with('storages');
 

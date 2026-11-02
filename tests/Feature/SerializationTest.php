@@ -52,7 +52,7 @@ it('serializes table storage like JSON storage', function (): void {
     $json = reload(article(JsonArticle::class, ['en' => ['title' => 'Saperavi']], ['slug' => 'saperavi']));
     $table = reload(article(TableArticle::class, ['en' => ['title' => 'Saperavi']], ['slug' => 'saperavi']));
 
-    $keys = fn (array $array): array => collect($array)->keys()->diff(['deleted_at'])->sort()->values()->all();
+    $keys = fn (array $array): array => collect($array)->keys()->diff(['deleted_at', 'parent_id'])->sort()->values()->all();
 
     expect($keys($table->toArray()))->toBe($keys($json->toArray()))
         ->and(TableArticle::with('translations')->find($table->id)->toArray())->not->toHaveKey('translations');
@@ -79,5 +79,5 @@ it('survives PHP serialization with unsaved translations', function (string $cla
     $copy = unserialize(serialize($article));
 
     expect($copy->getAllTranslations())->toBe($article->getAllTranslations())
-        ->and($copy->hasUnsavedTranslations())->toBeTrue();
+        ->and($copy->isDirty())->toBeTrue();
 })->with('storages');

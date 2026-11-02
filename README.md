@@ -287,7 +287,8 @@ $wine->setTranslation('name', 'en', 'Saperavi')
 | `fillTranslations([$locale => [$attribute => $value]])` | sets values of several locales; others are untouched |
 | `forgetTranslation($attribute, $locale)` | removes one value |
 | `forgetTranslations($locale)` | removes every value of a locale |
-| `hasUnsavedTranslations()` | whether there are changes `save()` has not stored yet |
+| `isDirty('name')`, `isClean()`, `wasChanged('name')` | Eloquent's change tracking, aware of translated attributes |
+| `getDirtyTranslations()` | the unsaved changes: `[$locale => [$attribute => $value]]` |
 
 ```php
 // Create a model with translations in several locales:
@@ -305,7 +306,29 @@ Writes validate eagerly: an attribute that is not translatable throws `Attribute
 
 Saving a model with translation changes writes the model and all its translations **in one database transaction**. If any part fails (a translation row, a listener, a state update), nothing is written. A surrounding `DB::transaction()` is joined as usual. A `saving` listener that returns `false` stops the whole save, and the changes stay pending.
 
-`saveQuietly()` stores translations too.
+`saveQuietly()`, `saveOrFail()`, `push()`, `update()`, `updateQuietly()`, `create()`, `firstOrCreate()` / `updateOrCreate()` (translatable keys in the *values* argument) and model factories all store translations, because they all go through `save()`.
+
+### Change tracking and model events
+
+Unsaved translations make the model dirty, like any changed attribute:
+
+```php
+$wine->setTranslation('name', 'ka', 'საფერავი');
+
+$wine->isDirty();               // true
+$wine->isDirty('name');         // true
+$wine->getDirtyTranslations();  // ['ka' => ['name' => 'საფერავი']]
+
+$wine->save();
+
+$wine->wasChanged('name');      // true (after an update; inserts don't count, as for columns)
+```
+
+So saving a translation-only change is an ordinary Eloquent update for both storages: `updating`, `updated`, `saving` and `saved` fire, `updated_at` changes, and `$touches` owners are touched. `discardChanges()` and `refresh()` discard unsaved translations.
+
+`getDirty()`, `getChanges()` and `getOriginal()` stay **column-level**: they describe what Eloquent writes to the model's own table (raw JSON for JSON storage, nothing for table storage). Use `getDirtyTranslations()` and `getTranslation()` for translation values.
+
+During `saving`, `updating`, `updated` and `saved` listeners, the translations being saved are still unsaved (`getDirtyTranslations()` lists them, and reads already show them). Table rows are written after the model row, before `save()` returns. Translations a listener changes during the save stay pending for the next `save()`: they are neither written by this save nor lost.
 
 ### Concurrent edits
 
@@ -318,7 +341,6 @@ Two people changing **the same value** is last-write-wins, as with any Eloquent 
 
 ### Other Eloquent behavior
 
-- `updated_at` changes when translations change, with both storages.
 - `replicate()` copies translations, with both storages. Attributes in `$except` are left out.
 - Deleting a model deletes its translation rows. Soft deletes keep them, and `forceDelete()` removes them. With a `cascadeOnDelete()` foreign key, the database does it as well.
 
@@ -351,7 +373,19 @@ Wine::active()->pluckTranslation('name', 'slug', fallback: true);
 
 The same rule as reading applies. Query scopes use the exact locale (the current one by default) unless you pass `fallback: true`, and then they use the same fallback chain as attribute access. Values are always bound, never interpolated. Operators and directions are checked against a fixed list.
 
-On MySQL and MariaDB, JSON-storage comparisons go through `json_unquote(json_extract(...))`, which compares case-sensitively. For case-insensitive search there, use table storage or a generated column.
+**Both storages give the same answers on the same database.** Case sensitivity and sort order follow the database:
+
+| Database | `=` | `like` | Case-insensitive search |
+|---|---|---|---|
+| MySQL, MariaDB | case-insensitive with the default `utf8mb4_*_ci` collation | case-insensitive | `like` |
+| PostgreSQL | case-sensitive | case-sensitive | `ilike` |
+| SQLite | case-sensitive | case-insensitive for ASCII | `like` |
+
+On MySQL and MariaDB, JSON values are compared with the connection's collation, as table columns created on that connection are, so both storages agree. In queries, fallback works like reads: an empty string is a value and doesn't fall back.
+
+JSON storage compares values as text on MySQL, MariaDB and PostgreSQL (SQLite compares JSON numbers as numbers). Use table storage with numeric columns for numeric ranges and numeric sorting.
+
+Query builder writes bypass the model: `Wine::query()->update(['name' => ...])`, `insert()`, `upsert()` and lookup attributes of `firstOrCreate(['name' => ...])` refer to columns, which table storage doesn't have and JSON storage stores as whole objects. Use models, or `whereTranslation()` to find them.
 
 ## Eager loading and performance
 
@@ -371,7 +405,7 @@ Writes stay small:
 | | New model | Changing an existing model |
 |---|---|---|
 | JSON | 1 insert | 1 locked read + 1 update |
-| Table | 1 insert + 1 per locale | 1 write per changed locale (+ 1 for `updated_at`) |
+| Table | 1 insert + 1 per locale | 1 write per changed locale + 1 model update (`updated_at`) |
 
 Unchanged values aren't written. Setting a value back to what is stored is no change at all.
 
