@@ -1,6 +1,6 @@
 {
     "name": "laravel-tipi/translations",
-    "description": "Translatable Eloquent attributes for Laravel, stored in JSON columns or dedicated translation tables, with context-aware fallback.",
+    "description": "Translatable Eloquent attributes for Laravel, stored in JSON columns, dedicated translation tables or one shared polymorphic table, with context-aware fallback.",
     "keywords": [
         "laravel",
         "localization",

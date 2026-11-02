@@ -12,7 +12,7 @@ use Tipi\Translations\ResolvedTranslation;
 
 /**
  * An Eloquent model with translatable attributes. Implemented by
- * HasJsonTranslations and HasTableTranslations.
+ * HasJsonTranslations, HasTableTranslations and HasSharedTableTranslations.
  *
  * Reading:
  * - $model->name resolves the current locale with fallback;

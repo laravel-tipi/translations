@@ -13,8 +13,8 @@ use Tipi\Translations\Exceptions\TranslatableColumnQueryException;
 /**
  * Rejects where and order clauses that use a translatable attribute as a
  * column: they would compare a JSON map (JSON storage) or a column that
- * does not exist (table storage), and firstOrCreate() would silently
- * create duplicates. JSON paths ("name->en") are left alone.
+ * does not exist (table and shared storage), and firstOrCreate() would
+ * silently create duplicates. JSON paths ("name->en") are left alone.
  *
  * Registered as a global scope, so it sees every clause just before the
  * query runs. withoutGlobalScope(TranslatableColumnGuard::class) skips it.

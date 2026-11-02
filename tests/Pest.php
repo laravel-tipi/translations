@@ -7,19 +7,22 @@ use Illuminate\Support\Facades\DB;
 use Tipi\Localization\LocaleContexts;
 use Tipi\Translations\Contracts\TranslatableModel;
 use Tipi\Translations\Tests\Fixtures\Models\JsonArticle;
+use Tipi\Translations\Tests\Fixtures\Models\SharedArticle;
 use Tipi\Translations\Tests\Fixtures\Models\TableArticle;
 use Tipi\Translations\Tests\Fixtures\Models\UntimedJsonArticle;
+use Tipi\Translations\Tests\Fixtures\Models\UntimedSharedArticle;
 use Tipi\Translations\Tests\Fixtures\Models\UntimedTableArticle;
 use Tipi\Translations\Tests\TestCase;
 
-pest()->extend(TestCase::class)->in('Feature');
+pest()->extend(TestCase::class)->in('Feature', 'Benchmarks');
 
 /*
- | Every behavior that does not depend on the storage runs against both.
+ | Every behavior that does not depend on the storage runs against all three.
  */
 dataset('storages', [
     'json' => JsonArticle::class,
     'table' => TableArticle::class,
+    'shared' => SharedArticle::class,
 ]);
 
 /*
@@ -30,6 +33,8 @@ dataset('models', [
     'table' => TableArticle::class,
     'json without timestamps' => UntimedJsonArticle::class,
     'table without timestamps' => UntimedTableArticle::class,
+    'shared' => SharedArticle::class,
+    'shared without timestamps' => UntimedSharedArticle::class,
 ]);
 
 /**

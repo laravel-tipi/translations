@@ -6,6 +6,7 @@ namespace Tipi\Translations;
 
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
+use Tipi\Translations\Commands\PruneOrphanedTranslationsCommand;
 use Tipi\Translations\Contracts\FallbackPolicy;
 
 final class TranslationsServiceProvider extends PackageServiceProvider
@@ -15,7 +16,16 @@ final class TranslationsServiceProvider extends PackageServiceProvider
         $package
             ->name('translations')
             ->hasConfigFile()
-            ->hasMigration('create_translation_states_table');
+            ->hasMigrations(['create_translations_table', 'create_translation_states_table'])
+            ->hasCommand(PruneOrphanedTranslationsCommand::class);
+    }
+
+    public function packageBooted(): void
+    {
+        // Only for applications that used shared storage in v0.1.
+        $this->publishes([
+            __DIR__.'/../database/upgrades/upgrade_translations_table_from_v0_1.php' => database_path('migrations/'.date('Y_m_d_His').'_upgrade_translations_table_from_v0_1.php'),
+        ], 'translations-upgrade-v0.1');
     }
 
     public function packageRegistered(): void

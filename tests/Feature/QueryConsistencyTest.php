@@ -3,24 +3,25 @@
 declare(strict_types=1);
 
 use Tipi\Translations\Tests\Fixtures\Models\JsonArticle;
+use Tipi\Translations\Tests\Fixtures\Models\SharedArticle;
 use Tipi\Translations\Tests\Fixtures\Models\TableArticle;
 use Tipi\Translations\Tests\TestCase;
 
 /*
- | The same query must give the same answer for both storages, on every
+ | The same query must give the same answer for every storage, on every
  | database. Case sensitivity follows the database's collation.
  */
 
 /**
- * Run the same query against identical data in both storages.
+ * Run the same query against identical data in every storage.
  *
- * @return array{json: list<string>, table: list<string>}
+ * @return array{json: list<string>, table: list<string>, shared: list<string>}
  */
-function bothStorages(Closure $query): array
+function allStorages(Closure $query): array
 {
     $results = [];
 
-    foreach (['json' => JsonArticle::class, 'table' => TableArticle::class] as $storage => $class) {
+    foreach (['json' => JsonArticle::class, 'table' => TableArticle::class, 'shared' => SharedArticle::class] as $storage => $class) {
         foreach (['apple' => 'apple', 'Banana' => 'Banana', 'cherry' => 'cherry', 'Apple-2' => 'Apple'] as $slug => $title) {
             article($class, ['en' => ['title' => $title]], ['slug' => $slug]);
         }
@@ -37,30 +38,32 @@ function caseInsensitiveDatabase(): bool
 }
 
 it('compares equality with the same case sensitivity', function (): void {
-    $results = bothStorages(fn ($query) => $query->whereTranslation('title', '=', 'APPLE', 'en')->orderBy('slug'));
+    $results = allStorages(fn ($query) => $query->whereTranslation('title', '=', 'APPLE', 'en')->orderBy('slug'));
 
     expect($results['json'])->toBe($results['table'])
+        ->and($results['shared'])->toBe($results['table'])
         ->and($results['table'])->toBe(caseInsensitiveDatabase() ? ['apple', 'Apple-2'] : []);
 });
 
 it('compares like with the same case sensitivity', function (): void {
-    $results = bothStorages(fn ($query) => $query->whereTranslation('title', 'like', 'b%', 'en')->orderBy('slug'));
+    $results = allStorages(fn ($query) => $query->whereTranslation('title', 'like', 'b%', 'en')->orderBy('slug'));
 
     // SQLite's LIKE ignores ASCII case; PostgreSQL's does not (use ilike).
     expect($results['json'])->toBe($results['table'])
+        ->and($results['shared'])->toBe($results['table'])
         ->and($results['table'])->toBe(TestCase::databaseDriver() === 'pgsql' ? [] : ['Banana']);
 });
 
 it('orders with the same collation', function (): void {
-    $results = bothStorages(fn ($query) => $query->orderByTranslation('title', 'asc', 'en')->orderBy('id'));
+    $results = allStorages(fn ($query) => $query->orderByTranslation('title', 'asc', 'en')->orderBy('id'));
 
-    expect($results['json'])->toBe($results['table']);
+    expect($results['json'])->toBe($results['table'])->and($results['shared'])->toBe($results['table']);
 });
 
 it('matches case-insensitively with ilike on PostgreSQL', function (): void {
-    $results = bothStorages(fn ($query) => $query->whereTranslation('title', 'ilike', 'b%', 'en'));
+    $results = allStorages(fn ($query) => $query->whereTranslation('title', 'ilike', 'b%', 'en'));
 
-    expect($results['json'])->toBe(['Banana'])->and($results['table'])->toBe(['Banana']);
+    expect($results)->toBe(['json' => ['Banana'], 'table' => ['Banana'], 'shared' => ['Banana']]);
 })->skip(fn () => TestCase::databaseDriver() !== 'pgsql', 'ilike is PostgreSQL only');
 
 it('does not fall back from an empty string in queries', function (string $class): void {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Illuminate\Support\Facades\DB;
 use Tipi\Translations\Tests\Fixtures\Models\JsonArticle;
+use Tipi\Translations\Tests\Fixtures\Models\SharedArticle;
 
 /*
  | One rule for both storages: a translation is missing when its value is
@@ -122,6 +123,8 @@ it('reads values of locales unknown to the registry from all translations only',
     // Data left behind by a locale that was removed from the registry.
     if ($class === JsonArticle::class) {
         DB::table('json_articles')->where('id', $article->id)->update(['title' => '{"en":"Saperavi","ru":"Саперави"}']);
+    } elseif ($class === SharedArticle::class) {
+        DB::table('translations')->insert(['translatable_type' => $article->getMorphClass(), 'translatable_id' => $article->id, 'locale_code' => 'ru', 'attribute' => 'title', 'value' => '"Саперави"']);
     } else {
         DB::table('table_article_translations')->insert(['table_article_id' => $article->id, 'locale_code' => 'ru', 'title' => 'Саперави']);
     }

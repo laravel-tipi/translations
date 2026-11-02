@@ -35,6 +35,27 @@ final class InvalidTranslatableModelException extends LogicException implements 
         ));
     }
 
+    public static function invalidConfiguration(string $reason): self
+    {
+        return new self("Invalid translations configuration: {$reason}.");
+    }
+
+    public static function unsupportedKey(string $model, string $reason): self
+    {
+        return new self("Model [{$model}] cannot use the polymorphic translation tables: {$reason}. See [translations.morph_key_type].");
+    }
+
+    public static function connectionMismatch(string $model, string $related, string $connection, string $relatedConnection): self
+    {
+        return new self(sprintf(
+            'Model [%s] is on the [%s] connection, but its translation rows ([%s]) are on [%s]. Both must use one connection, so they are written in one transaction.',
+            $model,
+            $connection,
+            $related,
+            $relatedConnection,
+        ));
+    }
+
     public static function invalidStatus(string $reason): self
     {
         return new self("Invalid translation status: {$reason}.");

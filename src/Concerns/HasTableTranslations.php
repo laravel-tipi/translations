@@ -20,6 +20,9 @@ use Tipi\Translations\Exceptions\InvalidTranslatableModelException;
  *   (with('translations') or withTranslations()) when reading many models.
  * - Values are read through the translation model, so its casts apply.
  * - A row without any value is deleted.
+ * - Rows are deleted with the model (not on soft delete), in one
+ *   transaction. A foreign key with cascade also covers deletes that
+ *   bypass the model.
  * - The rows are hidden from toArray(); translated attributes are
  *   serialized instead.
  *
@@ -47,19 +50,6 @@ trait HasTableTranslations
     public function initializeHasTableTranslations(): void
     {
         $this->makeHidden('translations');
-    }
-
-    public static function bootHasTableTranslations(): void
-    {
-        static::deleting(function (Model $model): void {
-            if (method_exists($model, 'isForceDeleting') && ! $model->isForceDeleting()) {
-                return;
-            }
-
-            /** @var Model&self $model */
-            $model->translations()->delete();
-            $model->unsetRelation('translations');
-        });
     }
 
     /**
@@ -124,6 +114,8 @@ trait HasTableTranslations
     protected function writeTranslations(array $changes): void
     {
         $relation = $this->translations();
+        $this->ensureTranslationConnection($relation->getRelated());
+        $this->lockTranslationOwnerOrFail();
         $owner = $relation->make()->getAttributes();
         $uniqueBy = [...array_keys($owner), 'locale_code'];
 
@@ -235,6 +227,11 @@ trait HasTableTranslations
     protected function eagerLoadTranslations(Builder $query): void
     {
         $query->with('translations');
+    }
+
+    protected function translationRowRelations(): array
+    {
+        return ['translations'];
     }
 
     /**

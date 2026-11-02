@@ -3,13 +3,16 @@
 declare(strict_types=1);
 
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Tipi\Translations\Models\Translation;
 use Tipi\Translations\Tests\Fixtures\Models\JsonArticle;
+use Tipi\Translations\Tests\Fixtures\Models\SharedArticle;
 use Tipi\Translations\Tests\Fixtures\Models\TableArticle;
 use Tipi\Translations\Tests\Fixtures\Models\TableArticleTranslation;
+use Tipi\Translations\Tests\Fixtures\Models\TouchingSharedArticle;
 use Tipi\Translations\Tests\Fixtures\Models\TouchingTableArticle;
 
 afterEach(function (): void {
-    foreach ([JsonArticle::class, TableArticle::class, TableArticleTranslation::class] as $model) {
+    foreach ([JsonArticle::class, TableArticle::class, TableArticleTranslation::class, SharedArticle::class, Translation::class] as $model) {
         $model::flushEventListeners();
     }
 });
@@ -141,15 +144,18 @@ it('discards translation changes with discardChanges()', function (string $class
     expect(reload($article)->title)->toBe('Saperavi');
 })->with('storages');
 
-it('touches owners when only table-stored translations change', function (): void {
+it('touches owners when only table-stored translations change', function (string $parentClass, string $childClass): void {
     $this->travelTo('2026-01-01 10:00:00');
-    $parent = article(TableArticle::class, ['en' => ['title' => 'Parent']]);
-    $child = TouchingTableArticle::query()->findOrFail(
-        article(TouchingTableArticle::class, ['en' => ['title' => 'Child']], ['parent_id' => $parent->id])->id,
+    $parent = article($parentClass, ['en' => ['title' => 'Parent']]);
+    $child = $childClass::query()->findOrFail(
+        article($childClass, ['en' => ['title' => 'Child']], ['parent_id' => $parent->id])->id,
     );
 
     $this->travelTo('2026-01-02 10:00:00');
     $child->setTranslation('title', 'ka', 'შვილი')->save();
 
     expect(reload($parent)->updated_at->toDateTimeString())->toBe('2026-01-02 10:00:00');
-});
+})->with([
+    'table' => [TableArticle::class, TouchingTableArticle::class],
+    'shared' => [SharedArticle::class, TouchingSharedArticle::class],
+]);

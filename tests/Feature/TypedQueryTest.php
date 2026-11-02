@@ -7,16 +7,19 @@ use Illuminate\Database\QueryException;
 use Tipi\Translations\Tests\Fixtures\Enums\TranslationStatus;
 use Tipi\Translations\Tests\Fixtures\Models\CastArticle;
 use Tipi\Translations\Tests\Fixtures\Models\JsonCastArticle;
+use Tipi\Translations\Tests\Fixtures\Models\SharedCastArticle;
 use Tipi\Translations\Tests\TestCase;
 
 /*
- | Numbers compare and sort as numbers in both storages: table storage by
- | its column types, JSON storage by the JSON type of the stored value.
+ | Numbers compare and sort as numbers in every storage: table storage by
+ | its column types, JSON and shared storage by the JSON type of the
+ | stored value.
  */
 
 dataset('typed storages', [
     'json' => JsonCastArticle::class,
     'table' => CastArticle::class,
+    'shared' => SharedCastArticle::class,
 ]);
 
 /**
@@ -133,9 +136,9 @@ it('rejects operands translations cannot be compared with', function (string $cl
     'infinity' => ['>', INF],
 ]);
 
-it('accepts a backed enum operand', function (): void {
-    $article = article(JsonCastArticle::class, ['en' => ['content' => 'reviewed']]);
+it('accepts a backed enum operand', function (string $class): void {
+    $article = article($class, ['en' => ['content' => 'reviewed']]);
 
-    expect(JsonCastArticle::query()->whereTranslation('content', '=', TranslationStatus::Reviewed, 'en')->pluck('id')->all())
+    expect($class::query()->whereTranslation('content', '=', TranslationStatus::Reviewed, 'en')->pluck('id')->all())
         ->toBe([$article->getKey()]);
-});
+})->with(['json' => JsonCastArticle::class, 'shared' => SharedCastArticle::class]);

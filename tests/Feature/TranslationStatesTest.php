@@ -8,11 +8,13 @@ use Tipi\Translations\Models\TranslationState;
 use Tipi\Translations\Tests\Fixtures\Enums\OtherStatus;
 use Tipi\Translations\Tests\Fixtures\Enums\TranslationStatus;
 use Tipi\Translations\Tests\Fixtures\Models\StatefulJsonArticle;
+use Tipi\Translations\Tests\Fixtures\Models\StatefulSharedArticle;
 use Tipi\Translations\Tests\Fixtures\Models\StatefulTableArticle;
 
 dataset('stateful storages', [
     'json' => StatefulJsonArticle::class,
     'table' => StatefulTableArticle::class,
+    'shared' => StatefulSharedArticle::class,
 ]);
 
 /**

@@ -8,12 +8,13 @@ use Illuminate\Database\Connection;
 use LogicException;
 
 /**
- * SQL for one locale's value in a JSON translations column, per database.
+ * SQL for a translated JSON value, per database: one locale's member of a
+ * JSON storage column, or a whole JSON value of shared storage.
  *
- * value() yields the stored JSON value, or NULL when the locale is missing
- * (a JSON null counts as missing, like on reads). The other methods read
- * that value as a number or as text, so comparisons follow the stored
- * JSON type on every database.
+ * value() and document() yield the stored JSON value, or NULL when it is
+ * missing (a JSON null counts as missing, like on reads). compare() and
+ * order() read that value as a number or as text, so comparisons follow
+ * the stored JSON type on every database.
  *
  * @internal
  */
@@ -46,6 +47,66 @@ final readonly class JsonTranslationSql
             'mysql', 'mariadb' => ["nullif(json_extract({$column}, ?), json_extract('null', '$'))", [$path]],
             default => ["nullif(({$column})::jsonb -> (?)::text, 'null'::jsonb)", [$locale]],
         };
+    }
+
+    /**
+     * The whole JSON value of a column.
+     *
+     * @param  string  $column  the wrapped column
+     */
+    public function document(string $column): string
+    {
+        return match ($this->driver) {
+            'sqlite' => "json_extract({$column}, '$')",
+            'mysql', 'mariadb' => "nullif(json_extract({$column}, '$'), json_extract('null', '$'))",
+            default => "nullif(({$column})::jsonb, 'null'::jsonb)",
+        };
+    }
+
+    /**
+     * A condition comparing a value: numerically when the operand is
+     * numeric and the stored value is a number, otherwise as text.
+     *
+     * @param  array{0: string, 1: list<mixed>}  $value
+     * @return array{0: string, 1: list<mixed>}
+     */
+    public function compare(array $value, string $operator, string|int|float $operand): array
+    {
+        [$expression, $bindings] = $value;
+
+        // Each use of the expression repeats its bindings.
+        $text = $this->text($expression);
+
+        if (! is_numeric($operand) || str_contains($operator, 'like')) {
+            return ["{$text} {$operator} ?", [...$bindings, (string) $operand]];
+        }
+
+        return [
+            "case when {$this->isNumber($expression)} then ({$this->number($expression)} {$operator} {$this->numberPlaceholder()}) else ({$text} {$operator} ?) end",
+            [...$bindings, ...$bindings, is_string($operand) ? $operand + 0 : $operand, ...$bindings, (string) $operand],
+        ];
+    }
+
+    /**
+     * ORDER BY expressions: missing values last, numbers numerically
+     * before text, text in the connection's collation.
+     *
+     * @param  array{0: string, 1: list<mixed>}  $value
+     * @return array{0: string, 1: list<mixed>}
+     */
+    public function order(array $value, string $direction): array
+    {
+        [$expression, $bindings] = $value;
+        $isNumber = $this->isNumber($expression);
+
+        // The expression is used five times; each use repeats its bindings.
+        return [
+            "case when {$expression} is null then 1 else 0 end, "
+                ."case when {$isNumber} then 0 else 1 end, "
+                ."case when {$isNumber} then {$this->number($expression)} end {$direction}, "
+                ."{$this->text($expression)} {$direction}",
+            [...$bindings, ...$bindings, ...$bindings, ...$bindings, ...$bindings],
+        ];
     }
 
     public function isNumber(string $value): string

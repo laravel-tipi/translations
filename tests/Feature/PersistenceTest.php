@@ -6,8 +6,10 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Tipi\Translations\Models\Translation;
 use Tipi\Translations\Models\TranslationState;
 use Tipi\Translations\Tests\Fixtures\Models\JsonArticle;
+use Tipi\Translations\Tests\Fixtures\Models\SharedArticle;
 use Tipi\Translations\Tests\Fixtures\Models\StatefulJsonArticle;
 use Tipi\Translations\Tests\Fixtures\Models\TableArticle;
 use Tipi\Translations\Tests\Fixtures\Models\TableArticleTranslation;
@@ -15,7 +17,7 @@ use Tipi\Translations\Tests\Fixtures\Models\UuidArticle;
 use Tipi\Translations\Tests\Fixtures\Models\UuidArticleTranslation;
 
 afterEach(function (): void {
-    foreach ([JsonArticle::class, TableArticle::class, TableArticleTranslation::class, TranslationState::class] as $model) {
+    foreach ([JsonArticle::class, TableArticle::class, TableArticleTranslation::class, SharedArticle::class, Translation::class, TranslationState::class] as $model) {
         $model::flushEventListeners();
     }
 });

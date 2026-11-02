@@ -16,7 +16,7 @@ use Tipi\Translations\Models\TranslationState;
 
 /**
  * Editorial state per translated locale: whether it is outdated and an
- * optional status (an application enum). Works with both storages.
+ * optional status (an application enum). Works with every storage.
  *
  * Kept in sync on save(): a locale whose translations changed is marked
  * current, and a locale that lost all its values loses its state.
@@ -25,25 +25,14 @@ use Tipi\Translations\Models\TranslationState;
  */
 trait HasTranslationStates
 {
-    public static function bootHasTranslationStates(): void
-    {
-        static::deleted(function (Model $model): void {
-            if (method_exists($model, 'isForceDeleting') && ! $model->isForceDeleting()) {
-                return;
-            }
-
-            /** @var Model&self $model */
-            $model->translationStates()->delete();
-            $model->unsetRelation('translationStates');
-        });
-    }
-
     /**
+     * Deleted with the model (not on soft delete), in one transaction.
+     *
      * @return MorphMany<TranslationState, $this>
      */
     public function translationStates(): MorphMany
     {
-        return $this->morphMany(config('translations.states.model', TranslationState::class), 'translatable');
+        return $this->translationMorphMany(config('translations.states.model', TranslationState::class));
     }
 
     public function getTranslationState(string|Locale $locale): ?TranslationState
@@ -153,6 +142,8 @@ trait HasTranslationStates
      */
     private function saveTranslationState(TranslationState $state): TranslationState
     {
+        $this->ensureTranslationConnection($state);
+
         if ($state->exists) {
             $state->save();
 
@@ -160,8 +151,13 @@ trait HasTranslationStates
         }
 
         try {
-            // A savepoint, so a failed insert leaves a surrounding transaction usable.
-            $state->getConnection()->transaction(fn (): bool => $state->save());
+            // A transaction (a savepoint inside one), so a failed insert
+            // leaves a surrounding transaction usable, and the model's row
+            // stays locked until the state is in.
+            $state->getConnection()->transaction(function () use ($state): void {
+                $this->lockTranslationOwnerOrFail();
+                $state->save();
+            });
 
             return $state;
         } catch (UniqueConstraintViolationException) {

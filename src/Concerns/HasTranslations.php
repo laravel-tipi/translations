@@ -8,6 +8,8 @@ use BackedEnum;
 use Illuminate\Database\Eloquent\Attributes\Scope;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Collection;
 use InvalidArgumentException;
 use Stringable;
@@ -15,15 +17,19 @@ use Throwable;
 use Tipi\Support\Locale;
 use Tipi\Translations\Contracts\TranslatableModel;
 use Tipi\Translations\Exceptions\AttributeNotTranslatableException;
+use Tipi\Translations\Exceptions\InvalidTranslatableModelException;
 use Tipi\Translations\Exceptions\MissingTranslationException;
 use Tipi\Translations\ResolvedTranslation;
+use Tipi\Translations\Support\MorphKeyType;
+use Tipi\Translations\Support\StringKeyMorphMany;
 use Tipi\Translations\Support\TranslatableAttributes;
 use Tipi\Translations\Support\TranslatableColumnGuard;
 use Tipi\Translations\TranslationLocales;
 
 /**
- * Storage-independent translation behavior. Use HasJsonTranslations or
- * HasTableTranslations, which add the storage.
+ * Storage-independent translation behavior. Use HasJsonTranslations,
+ * HasTableTranslations or HasSharedTableTranslations, which add the
+ * storage.
  *
  * @mixin Model
  *
@@ -70,6 +76,12 @@ trait HasTranslations
     private array $translationWriteLog = [];
 
     private int $translationSaveDepth = 0;
+
+    /**
+     * Whether the save in progress inserted the model's row, which its
+     * transaction then holds locked.
+     */
+    private bool $translationOwnerInserted = false;
 
     /*
      | Storage primitives, implemented by the storage traits.
@@ -151,6 +163,14 @@ trait HasTranslations
      * @param  Builder<static>  $query
      */
     abstract protected function eagerLoadTranslations(Builder $query): void;
+
+    /**
+     * The relations whose rows hold this model's translations, deleted
+     * with the model.
+     *
+     * @return list<string>
+     */
+    abstract protected function translationRowRelations(): array;
 
     /**
      * Rejects queries that use a translatable attribute as a column.
@@ -429,7 +449,8 @@ trait HasTranslations
      | 1. "saving" and "creating"/"updating" listeners run; changes they make
      |    are part of this save;
      | 2. the storage prepares the row (JSON storage encodes the columns);
-     | 3. the row is written, then the translations (table storage);
+     | 3. the row is written, then the translations (table and shared
+     |    storage);
      | 4. "created"/"updated" and "saved" listeners run with everything
      |    stored, and see translated attributes dirty and changed like
      |    columns. Translations they change stay pending for the next save.
@@ -539,14 +560,38 @@ trait HasTranslations
     }
 
     /**
-     * Hooks the translation write into Eloquent's lifecycle: prepared once
-     * "creating"/"updating" listeners ran, written before "created"/
-     * "updated" listeners run. Runs with events disabled too.
+     * Deletes the model and the rows that hold its translations (table
+     * and shared storage, translation states) in one transaction. A soft
+     * delete keeps them.
+     */
+    public function delete()
+    {
+        if (! $this->exists || $this->ownedTranslationRelations() === []) {
+            return parent::delete();
+        }
+
+        return $this->getConnection()->transaction(fn () => parent::delete());
+    }
+
+    /**
+     * Hooks translations into Eloquent's lifecycle. Runs with events
+     * disabled too (saveQuietly(), deleteQuietly()):
+     *
+     * - a write is prepared once "creating"/"updating" listeners ran, and
+     *   written before "created"/"updated" listeners run;
+     * - translation rows are deleted once "deleting" listeners allowed
+     *   the delete, before the model's row.
      */
     protected function fireModelEvent($event, $halt = true)
     {
         if ($event === 'created' || $event === 'updated') {
-            $this->storeTranslationWrite();
+            $this->translationOwnerInserted = $event === 'created';
+
+            try {
+                $this->storeTranslationWrite();
+            } finally {
+                $this->translationOwnerInserted = false;
+            }
         }
 
         $result = parent::fireModelEvent($event, $halt);
@@ -555,13 +600,17 @@ trait HasTranslations
             $this->beginTranslationWrite();
         }
 
+        if ($event === 'deleting' && $result !== false) {
+            $this->deleteTranslationRows();
+        }
+
         return $result;
     }
 
     /**
      * Eloquent skips the update, its "updated" event and syncChanges()
      * when no column changed. A translation-only change of a model
-     * without timestamps (table storage) is still an update.
+     * without timestamps (table or shared storage) is still an update.
      */
     protected function performUpdate(Builder $query)
     {
@@ -578,7 +627,7 @@ trait HasTranslations
     }
 
     /**
-     * The replica carries the same translations, for both storages, as
+     * The replica carries the same translations, in every storage, as
      * unsaved changes. Attributes in $except are left out, as for columns.
      */
     public function replicate(?array $except = null): static
@@ -611,7 +660,8 @@ trait HasTranslations
      *
      * Values are strings, finite numbers, backed enums or Stringable
      * objects. Numbers compare numerically: table storage by its column
-     * types, JSON storage when the stored JSON value is a number.
+     * types, JSON and shared storage when the stored JSON value is a
+     * number.
      *
      * @param  Builder<static>  $query
      */
@@ -716,7 +766,7 @@ trait HasTranslations
 
     /**
      * Eager load what reading translations needs: the translations
-     * relation for table storage, nothing for JSON storage.
+     * relation for table and shared storage, nothing for JSON storage.
      *
      * @param  Builder<static>  $query
      */
@@ -831,6 +881,116 @@ trait HasTranslations
         if (method_exists($this, 'syncTranslationStates')) {
             $this->syncTranslationStates(array_map('strval', array_keys($changes)));
         }
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function ownedTranslationRelations(): array
+    {
+        $relations = $this->translationRowRelations();
+
+        if (in_array(HasTranslationStates::class, class_uses_recursive(static::class), true)) {
+            $relations[] = 'translationStates';
+        }
+
+        return $relations;
+    }
+
+    /**
+     * Rows go before the model's row, so foreign keys without cascade do
+     * not block the delete. The owner lock makes writers that are still
+     * adding rows finish first, so their rows are deleted too.
+     */
+    private function deleteTranslationRows(): void
+    {
+        if (method_exists($this, 'isForceDeleting') && ! $this->isForceDeleting()) {
+            return;
+        }
+
+        $relations = $this->ownedTranslationRelations();
+
+        if ($relations === []) {
+            return;
+        }
+
+        $this->lockTranslationOwner();
+
+        foreach ($relations as $relation) {
+            $this->{$relation}()->delete();
+            $this->unsetRelation($relation);
+        }
+    }
+
+    /**
+     * Lock the model's row until the transaction ends. Writers lock it
+     * before adding translation rows and delete() locks it before
+     * deleting them, so a row is never added for a model being deleted.
+     * Returns false when the row does not exist (any more).
+     */
+    private function lockTranslationOwner(): bool
+    {
+        return $this->newQueryWithoutScopes()
+            ->whereKey($this->getKeyForSaveQuery())
+            ->toBase()
+            ->lockForUpdate()
+            ->first([$this->getKeyName()]) !== null;
+    }
+
+    /**
+     * Before translation rows are added: lock the model's row, or fail
+     * when it was deleted meanwhile, as a foreign key would.
+     */
+    protected function lockTranslationOwnerOrFail(): void
+    {
+        // An insert locks the new row; an update may have matched no row.
+        if (! $this->translationOwnerInserted && ! $this->lockTranslationOwner()) {
+            throw (new ModelNotFoundException)->setModel(static::class, [$this->getKey()]);
+        }
+    }
+
+    /**
+     * Rows on another connection would not be part of the model's
+     * transaction or lock.
+     */
+    protected function ensureTranslationConnection(Model $related): void
+    {
+        $connection = $this->getConnection()->getName();
+        $relatedConnection = $related->getConnection()->getName();
+
+        if ($connection !== $relatedConnection) {
+            throw InvalidTranslatableModelException::connectionMismatch(static::class, $related::class, (string) $connection, (string) $relatedConnection);
+        }
+    }
+
+    /**
+     * A morphMany() to one of the package's polymorphic tables, for the
+     * configured key type.
+     *
+     * @template TRelated of Model
+     *
+     * @param  class-string<TRelated>  $related
+     * @return MorphMany<TRelated, $this>
+     */
+    protected function translationMorphMany(string $related): MorphMany
+    {
+        $keyType = MorphKeyType::configured();
+        $keyType->ensureSupports($this);
+
+        // Before any query: some databases reject a key that does not fit
+        // the column, others would find nothing or store it silently.
+        if ($this->getKey() !== null) {
+            $keyType->ensureKey($this);
+        }
+
+        if ($keyType !== MorphKeyType::String) {
+            return $this->morphMany($related, 'translatable');
+        }
+
+        $instance = $this->newRelatedInstance($related);
+        $table = $instance->getTable();
+
+        return new StringKeyMorphMany($instance->newQuery(), $this, "{$table}.translatable_type", "{$table}.translatable_id", $this->getKeyName());
     }
 
     private function hasListenersBeforeWrite(): bool

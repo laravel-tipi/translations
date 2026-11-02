@@ -7,6 +7,7 @@ namespace Tipi\Translations\Concerns;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\MissingAttributeException;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Collection;
 use JsonException;
 use Tipi\Translations\Exceptions\MalformedTranslationsException;
@@ -23,6 +24,8 @@ use Tipi\Translations\Support\JsonTranslationSql;
  *   values as text in the connection's collation, like table columns.
  * - Saving merges the changed locales into a freshly locked copy of the
  *   columns, so concurrent edits of different locales are not lost.
+ * - Saving translations of a model deleted meanwhile fails with
+ *   ModelNotFoundException, like the other storages.
  *
  * Do not add casts for the translatable columns.
  *
@@ -79,8 +82,14 @@ trait HasJsonTranslations
         // Lock the row and start from the stored columns, so locales other
         // processes changed since this model was loaded are kept.
         $stored = $this->exists
-            ? $this->newQueryWithoutScopes()->whereKey($this->getKey())->toBase()->lockForUpdate()->first($attributes)
+            ? $this->newQueryWithoutScopes()->whereKey($this->getKeyForSaveQuery())->toBase()->lockForUpdate()->first($attributes)
             : null;
+
+        // Deleted meanwhile: fail like the other storages, instead of
+        // reporting translations as saved.
+        if ($this->exists && $stored === null) {
+            throw (new ModelNotFoundException)->setModel(static::class, [$this->getKey()]);
+        }
 
         foreach ($attributes as $attribute) {
             $translations = $stored !== null
@@ -121,23 +130,7 @@ trait HasJsonTranslations
      */
     protected function compareTranslationSql(Builder $query, array $value, string $operator, string|int|float $operand): array
     {
-        $sql = $this->jsonTranslationSql($query);
-        [$expression, $bindings] = $value;
-
-        // Each use of the expression repeats its bindings.
-        $text = [$sql->text($expression), $bindings];
-
-        if (! is_numeric($operand) || str_contains($operator, 'like')) {
-            return ["{$text[0]} {$operator} ?", [...$text[1], (string) $operand]];
-        }
-
-        $isNumber = [$sql->isNumber($expression), $bindings];
-        $number = [$sql->number($expression), $bindings];
-
-        return [
-            "case when {$isNumber[0]} then ({$number[0]} {$operator} {$sql->numberPlaceholder()}) else ({$text[0]} {$operator} ?) end",
-            [...$isNumber[1], ...$number[1], is_string($operand) ? $operand + 0 : $operand, ...$text[1], (string) $operand],
-        ];
+        return $this->jsonTranslationSql($query)->compare($value, $operator, $operand);
     }
 
     /**
@@ -146,18 +139,7 @@ trait HasJsonTranslations
      */
     protected function orderTranslationSql(Builder $query, array $value, string $direction): array
     {
-        $sql = $this->jsonTranslationSql($query);
-        [$expression, $bindings] = $value;
-        $isNumber = $sql->isNumber($expression);
-
-        // The expression is used five times; each use repeats its bindings.
-        return [
-            "case when {$expression} is null then 1 else 0 end, "
-                ."case when {$isNumber} then 0 else 1 end, "
-                ."case when {$isNumber} then {$sql->number($expression)} end {$direction}, "
-                ."{$sql->text($expression)} {$direction}",
-            [...$bindings, ...$bindings, ...$bindings, ...$bindings, ...$bindings],
-        ];
+        return $this->jsonTranslationSql($query)->order($value, $direction);
     }
 
     /**
@@ -188,6 +170,11 @@ trait HasJsonTranslations
     protected function eagerLoadTranslations(Builder $query): void
     {
         // Translations are columns of the model: nothing to load.
+    }
+
+    protected function translationRowRelations(): array
+    {
+        return [];
     }
 
     private function jsonTranslationSql(Builder $query): JsonTranslationSql

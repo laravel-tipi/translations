@@ -6,11 +6,14 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Tipi\Translations\Tests\Fixtures\Models\CustomSaveJsonArticle;
+use Tipi\Translations\Tests\Fixtures\Models\CustomSaveSharedArticle;
 use Tipi\Translations\Tests\Fixtures\Models\CustomSaveTableArticle;
 use Tipi\Translations\Tests\Fixtures\Models\JsonArticle;
+use Tipi\Translations\Tests\Fixtures\Models\SharedArticle;
 use Tipi\Translations\Tests\Fixtures\Models\StatefulJsonArticle;
 use Tipi\Translations\Tests\Fixtures\Models\TableArticle;
 use Tipi\Translations\Tests\Fixtures\Models\UntimedJsonArticle;
+use Tipi\Translations\Tests\Fixtures\Models\UntimedSharedArticle;
 use Tipi\Translations\Tests\Fixtures\Models\UntimedTableArticle;
 use Tipi\Translations\Tests\TestCase;
 
@@ -27,7 +30,7 @@ use Tipi\Translations\Tests\TestCase;
  */
 
 afterEach(function (): void {
-    foreach ([JsonArticle::class, TableArticle::class, UntimedJsonArticle::class, UntimedTableArticle::class, StatefulJsonArticle::class] as $model) {
+    foreach ([JsonArticle::class, TableArticle::class, SharedArticle::class, UntimedJsonArticle::class, UntimedTableArticle::class, UntimedSharedArticle::class, StatefulJsonArticle::class] as $model) {
         $model::flushEventListeners();
     }
 });
@@ -308,7 +311,7 @@ it('writes translations when the model defines its own save()', function (string
     $article->setTranslation('title', 'ka', 'საფერავი')->save();
 
     expect(reload($article)->getAllTranslations())->toBe(['en' => ['title' => 'Saperavi'], 'ka' => ['title' => 'საფერავი']]);
-})->with([CustomSaveJsonArticle::class, CustomSaveTableArticle::class]);
+})->with([CustomSaveJsonArticle::class, CustomSaveTableArticle::class, CustomSaveSharedArticle::class]);
 
 it('follows the same rules for observer classes', function (string $class): void {
     $observer = new class

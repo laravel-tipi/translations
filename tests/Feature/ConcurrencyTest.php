@@ -3,13 +3,20 @@
 declare(strict_types=1);
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
+use Tipi\Translations\Models\Translation;
+use Tipi\Translations\Models\TranslationState;
 use Tipi\Translations\Tests\Fixtures\Models\CastArticle;
 use Tipi\Translations\Tests\Fixtures\Models\CastArticleTranslation;
 use Tipi\Translations\Tests\Fixtures\Models\JsonArticle;
+use Tipi\Translations\Tests\Fixtures\Models\SharedArticle;
+use Tipi\Translations\Tests\Fixtures\Models\StatefulJsonArticle;
+use Tipi\Translations\Tests\Fixtures\Models\StatefulSharedArticle;
 use Tipi\Translations\Tests\Fixtures\Models\TableArticle;
 use Tipi\Translations\Tests\Fixtures\Models\TableArticleTranslation;
 use Tipi\Translations\Tests\Fixtures\Models\UntimedJsonArticle;
+use Tipi\Translations\Tests\Fixtures\Models\UntimedSharedArticle;
 use Tipi\Translations\Tests\Fixtures\Models\UntimedTableArticle;
 use Tipi\Translations\Tests\TestCase;
 
@@ -135,6 +142,8 @@ dataset('concurrent models', [
     'table' => TableArticle::class,
     'json without timestamps' => UntimedJsonArticle::class,
     'table without timestamps' => UntimedTableArticle::class,
+    'shared' => SharedArticle::class,
+    'shared without timestamps' => UntimedSharedArticle::class,
 ]);
 
 it('keeps concurrent writes of different locales', function (string $class): void {
@@ -231,20 +240,149 @@ it('stays consistent under many concurrent writers', function (string $class): v
         ]);
 })->with('concurrent models');
 
-it('leaves no orphaned rows when a model is deleted during a translation write', function (): void {
-    $article = article(CastArticle::class, ['en' => ['position' => 1]]);
+/**
+ * Translation rows and states left in the database.
+ */
+function remainingRows(): int
+{
+    return CastArticleTranslation::query()->count()
+        + TableArticleTranslation::query()->count()
+        + Translation::query()->count()
+        + TranslationState::query()->count();
+}
+
+dataset('deletable models', [
+    'table with a foreign key' => CastArticle::class,
+    'table without a foreign key' => UntimedTableArticle::class,
+    'shared' => SharedArticle::class,
+    'shared without timestamps' => UntimedSharedArticle::class,
+    'shared with states' => StatefulSharedArticle::class,
+    'json with states' => StatefulJsonArticle::class,
+]);
+
+/**
+ * A value to write for the class's first translatable attribute.
+ *
+ * @param  class-string<Model>  $class
+ * @return array{0: string, 1: mixed}
+ */
+function firstAttribute(string $class): array
+{
+    $attribute = (new $class)->getTranslatableAttributes()[0];
+
+    return [$attribute, $attribute === 'position' ? 2 : 'Value'];
+}
+
+it('leaves no rows behind when a model is deleted while a writer adds rows', function (string $class): void {
+    [$attribute, $value] = firstAttribute($class);
+    $article = article($class, ['en' => [$attribute => $value]]);
 
     $errors = concurrently([
-        writer(CastArticle::class, $article->getKey(), fn ($copy) => $copy->setTranslation('position', 'ka', 2), hold: 200),
-        function (Closure $sync) use ($article): void {
-            $copy = CastArticle::query()->findOrFail($article->getKey());
+        writer($class, $article->getKey(), fn ($copy) => $copy->setTranslation($attribute, 'ka', $value), hold: 300),
+        function (Closure $sync) use ($class, $article): void {
+            $copy = $class::query()->findOrFail($article->getKey());
             $sync();
-            usleep(50_000);
-            $copy->delete();
+            usleep(100_000);
+            method_exists($copy, 'forceDelete') ? $copy->forceDelete() : $copy->delete();
         },
     ]);
 
-    expect($errors[1])->toBeNull()
-        ->and(CastArticle::query()->count())->toBe(0)
-        ->and(CastArticleTranslation::query()->count())->toBe(0);
-});
+    expect($errors)->toBe([null, null])
+        ->and($class::query()->count())->toBe(0)
+        ->and(remainingRows())->toBe(0);
+})->with('deletable models');
+
+it('refuses rows for a model deleted while the writer waited', function (string $class): void {
+    [$attribute, $value] = firstAttribute($class);
+    $article = article($class, ['en' => [$attribute => $value]]);
+
+    $errors = concurrently([
+        function (Closure $sync) use ($class, $article): void {
+            // Hold the delete's transaction open after the row is gone.
+            $class::deleted(fn () => usleep(300_000));
+            $copy = $class::query()->findOrFail($article->getKey());
+            $sync();
+            method_exists($copy, 'forceDelete') ? $copy->forceDelete() : $copy->delete();
+        },
+        function (Closure $sync) use ($class, $article, $attribute, $value): void {
+            $copy = $class::query()->findOrFail($article->getKey());
+            $copy->getAllTranslations();
+            $sync();
+            usleep(100_000);
+            $copy->setTranslation($attribute, 'ka', $value)->save();
+        },
+    ]);
+
+    expect($errors[0])->toBeNull()
+        ->and($errors[1])->toStartWith(ModelNotFoundException::class)
+        ->and($class::query()->count())->toBe(0)
+        ->and(remainingRows())->toBe(0);
+})->with('deletable models');
+
+it('writes many models sharing one table at the same time without deadlocks', function (string $class): void {
+    $existing = [];
+
+    for ($i = 0; $i < 12; $i++) {
+        $existing[] = article($class, ['en' => ['title' => "Wine {$i}"]])->getKey();
+    }
+
+    $writers = [];
+
+    foreach (['ka', 'de', 'fr', 'en'] as $index => $locale) {
+        $writers[] = function (Closure $sync) use ($class, $existing, $locale, $index): void {
+            $sync();
+
+            // Every writer adds its locale to every existing model, in its
+            // own order, and creates models of its own.
+            $keys = $index % 2 === 0 ? $existing : array_reverse($existing);
+
+            foreach ($keys as $key) {
+                $class::query()->findOrFail($key)->setTranslations($locale, ['title' => "{$locale} {$key}", 'body' => $locale])->save();
+                article($class, [$locale => ['title' => "new {$locale}"], 'en' => ['body' => 'new']]);
+            }
+        };
+    }
+
+    expect(concurrently($writers))->toBe([null, null, null, null]);
+
+    foreach ($existing as $key) {
+        expect($class::query()->findOrFail($key)->getTranslatedLocales())->toEqualCanonicalizing(['en', 'ka', 'de', 'fr']);
+    }
+
+    expect($class::query()->count())->toBe(12 + 4 * 12);
+})->with(['json' => JsonArticle::class, 'table' => TableArticle::class, 'shared' => SharedArticle::class]);
+
+it('recovers from a deadlock between transactions saving two models in opposite order', function (string $class): void {
+    $first = article($class, ['en' => ['title' => 'First']])->getKey();
+    $second = article($class, ['en' => ['title' => 'Second']])->getKey();
+    $attempts = sys_get_temp_dir().'/tipi-attempts-'.bin2hex(random_bytes(4));
+
+    $writer = fn (array $keys, string $locale): Closure => function (Closure $sync) use ($class, $keys, $locale, $attempts): void {
+        $synced = false;
+
+        // Laravel retries the closure when the database reports a
+        // deadlock; every attempt starts from fresh copies.
+        DB::transaction(function () use ($class, $keys, $locale, $sync, &$synced, $attempts): void {
+            file_put_contents($attempts, '.', FILE_APPEND);
+
+            foreach ($keys as $position => $key) {
+                $class::query()->findOrFail($key)->setTranslation('title', $locale, "{$locale} {$key}")->save();
+
+                if ($position === 0 && ! $synced) {
+                    $synced = true;
+                    $sync();
+                }
+            }
+        }, attempts: 3);
+    };
+
+    $errors = concurrently([$writer([$first, $second], 'ka'), $writer([$second, $first], 'de')]);
+    $tries = strlen((string) file_get_contents($attempts));
+    unlink($attempts);
+
+    expect($errors)->toBe([null, null])
+        ->and($tries)->toBeGreaterThan(2)
+        ->and($class::query()->findOrFail($first)->getTranslations('ka'))->toBe(['title' => "ka {$first}"])
+        ->and($class::query()->findOrFail($first)->getTranslations('de'))->toBe(['title' => "de {$first}"])
+        ->and($class::query()->findOrFail($second)->getTranslatedLocales())->toEqualCanonicalizing(['en', 'ka', 'de']);
+})->with(['json' => JsonArticle::class, 'table' => TableArticle::class, 'shared' => SharedArticle::class]);

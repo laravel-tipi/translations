@@ -38,6 +38,14 @@ return new class extends Migration
             $table->unique(['table_article_id', 'locale_code']);
         });
 
+        Schema::create('shared_articles', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('parent_id')->nullable();
+            $table->string('slug')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
         Schema::create('cast_articles', function (Blueprint $table): void {
             $table->id();
             $table->timestamps();
@@ -58,6 +66,21 @@ return new class extends Migration
             $table->id();
             $table->json('content')->nullable();
             $table->json('position')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('shared_cast_articles', function (Blueprint $table): void {
+            $table->id();
+            $table->timestamps();
+        });
+
+        Schema::create('uuid_shared_articles', function (Blueprint $table): void {
+            $table->uuid('id')->primary();
+            $table->timestamps();
+        });
+
+        Schema::create('ulid_shared_articles', function (Blueprint $table): void {
+            $table->ulid('id')->primary();
             $table->timestamps();
         });
 

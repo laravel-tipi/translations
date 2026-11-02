@@ -5,7 +5,14 @@ declare(strict_types=1);
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\LazyLoadingViolationException;
 use Tipi\Translations\Tests\Fixtures\Models\JsonArticle;
+use Tipi\Translations\Tests\Fixtures\Models\SharedArticle;
 use Tipi\Translations\Tests\Fixtures\Models\TableArticle;
+use Tipi\Translations\Tests\Fixtures\Models\UntimedSharedArticle;
+
+dataset('row storages', [
+    'table' => TableArticle::class,
+    'shared' => SharedArticle::class,
+]);
 
 afterEach(function (): void {
     Model::preventLazyLoading(false);
@@ -41,17 +48,19 @@ function readEverything(Closure $load): int
     });
 }
 
-it('reads table translations in a constant number of queries when eager loaded', function (bool $scope): void {
-    $load = fn () => $scope ? TableArticle::withTranslations()->get() : TableArticle::with('translations')->get();
+it('reads row-stored translations in a constant number of queries when eager loaded', function (string $class, bool $scope): void {
+    $load = fn () => $scope ? $class::withTranslations()->get() : $class::with('translations')->get();
 
-    seedArticles(TableArticle::class, 5);
+    seedArticles($class, 5);
     $few = readEverything($load);
 
-    seedArticles(TableArticle::class, 45);
+    seedArticles($class, 45);
+    // Rows of other models in the shared table are not loaded.
+    seedArticles(UntimedSharedArticle::class, 20);
     $many = readEverything($load);
 
     expect($few)->toBe(2)->and($many)->toBe(2);
-})->with(['with()' => false, 'withTranslations()' => true]);
+})->with(['table' => TableArticle::class, 'shared' => SharedArticle::class])->with(['with()' => false, 'withTranslations()' => true]);
 
 it('reads JSON translations with the model query only', function (): void {
     seedArticles(JsonArticle::class, 50);
@@ -59,27 +68,27 @@ it('reads JSON translations with the model query only', function (): void {
     expect(readEverything(fn () => JsonArticle::withTranslations()->get()))->toBe(1);
 });
 
-it('loads table translations once per model when not eager loaded', function (): void {
-    seedArticles(TableArticle::class, 5);
+it('loads row-stored translations once per model when not eager loaded', function (string $class): void {
+    seedArticles($class, 5);
 
-    expect(readEverything(fn () => TableArticle::all()))->toBe(6);
-});
+    expect(readEverything(fn () => $class::all()))->toBe(6);
+})->with('row storages');
 
-it('works with automatic eager loading', function (): void {
-    seedArticles(TableArticle::class, 5);
+it('works with automatic eager loading', function (string $class): void {
+    seedArticles($class, 5);
 
     Model::automaticallyEagerLoadRelationships();
 
-    expect(readEverything(fn () => TableArticle::all()))->toBe(2);
-});
+    expect(readEverything(fn () => $class::all()))->toBe(2);
+})->with('row storages');
 
-it('reports lazy loading when Eloquent prevents it', function (): void {
-    seedArticles(TableArticle::class, 2);
+it('reports lazy loading when Eloquent prevents it', function (string $class): void {
+    seedArticles($class, 2);
 
     Model::preventLazyLoading();
 
-    TableArticle::all()->first()->title;
-})->throws(LazyLoadingViolationException::class);
+    $class::all()->first()->title;
+})->throws(LazyLoadingViolationException::class)->with('row storages');
 
 it('reads without queries after saving', function (string $class): void {
     $article = article($class, ['en' => ['title' => 'Saperavi']]);
@@ -104,11 +113,13 @@ it('writes a new model and its translations in a bounded number of queries', fun
     // The model, one upsert per set of changed attributes ("title, body"
     // for en and ka, "title" for de), and a reload of the loaded rows.
     'table' => [TableArticle::class, 4],
+    // The model, one upsert of every value, and a reload of the loaded rows.
+    'shared' => [SharedArticle::class, 3],
 ]);
 
 it('updates an existing model in a bounded number of queries', function (string $class, int $expected): void {
     $article = article($class, ['en' => ['title' => 'Saperavi'], 'ka' => ['title' => 'საფერავი']]);
-    $article = $class === TableArticle::class ? $class::with('translations')->find($article->getKey()) : reload($article);
+    $article = $class === JsonArticle::class ? reload($article) : $class::with('translations')->find($article->getKey());
 
     $this->travel(1)->minute();
 
@@ -118,6 +129,19 @@ it('updates an existing model in a bounded number of queries', function (string 
 })->with([
     // Locked read of the column, then the update.
     'json' => [JsonArticle::class, 2],
-    // Touch updated_at, one upsert for both locales, reload the rows.
+    // Touch updated_at, lock the row (the update may have matched none),
+    // one upsert for both locales, reload the rows.
+    'table' => [TableArticle::class, 4],
+    'shared' => [SharedArticle::class, 4],
+]);
+
+it('deletes a model and its rows in a bounded number of queries', function (string $class, int $expected): void {
+    $article = reload(article($class, ['en' => ['title' => 'Saperavi'], 'ka' => ['title' => 'საფერავი']]));
+
+    expect(countQueries(fn () => $article->delete()))->toBe($expected);
+})->with([
+    'json' => [JsonArticle::class, 1],
+    // Lock the row, delete the translation rows, delete the row.
     'table' => [TableArticle::class, 3],
+    'shared' => [SharedArticle::class, 3],
 ]);
