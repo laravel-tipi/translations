@@ -16,9 +16,7 @@ final class TranslationsServiceProvider extends PackageServiceProvider
         $package
             ->name('translations')
             ->hasConfigFile()
-            // The upgrade runs after the create migrations and does nothing
-            // unless it finds a 0.1 shared table.
-            ->hasMigrations(['create_translations_table', 'create_translation_states_table', 'upgrade_translations_table_from_v0_1'])
+            ->hasMigrations(['create_translations_table', 'create_translation_states_table'])
             ->hasCommand(PruneOrphanedTranslationsCommand::class);
     }
 

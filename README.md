@@ -60,7 +60,7 @@ php artisan vendor:publish --tag=translations-migrations   # create_translations
 php artisan migrate
 ```
 
-Delete the migration you don't need before migrating. Both create polymorphic tables whose `translatable_id` column follows [`morph_key_type`](#model-keys-and-morph-types): set it first if your models use UUID or ULID keys. The third migration, `upgrade_translations_table_from_v0_1`, converts a 0.1 shared table and does nothing on a new installation.
+Delete the migration you don't need before migrating. Both create polymorphic tables whose `translatable_id` column follows [`morph_key_type`](#model-keys-and-morph-types): set it first if your models use UUID or ULID keys.
 
 Locales come from Localization: configure them there (`config/localization.php`). Translations does not define locales of its own.
 
