@@ -60,7 +60,7 @@ php artisan vendor:publish --tag=translations-migrations   # create_translations
 php artisan migrate
 ```
 
-Delete the migration you don't need before migrating. Both create polymorphic tables whose `translatable_id` column follows [`morph_key_type`](#model-keys-and-morph-types): set it first if your models use UUID or ULID keys.
+Delete the migration you don't need before migrating. Both create polymorphic tables whose `translatable_id` column follows [`morph_key_type`](#model-keys-and-morph-types): set it first if your models use UUID or ULID keys. The third migration, `upgrade_translations_table_from_v0_1`, converts a 0.1 shared table and does nothing on a new installation.
 
 Locales come from Localization: configure them there (`config/localization.php`). Translations does not define locales of its own.
 
@@ -425,7 +425,30 @@ Concurrent saves of the same model, from separate processes, behave like this on
 
 Each storage locks the model's row before writing rows, and `delete()` locks it before deleting them, so a model is never deleted between the check and the write. These rules are tested with concurrent processes on MySQL, MariaDB and PostgreSQL, including many writers on different models of one shared table. The package doesn't add optimistic locking: the same value saved by two editors is last-write-wins, as for any Eloquent attribute. Changes are computed from the model as you loaded it, so setting a value to what *your copy* already holds is no change, even if another process changed it meanwhile.
 
-Deadlocks and serialization failures aren't retried automatically: retrying a model save would run its events twice. The exception reaches your code, the transaction is rolled back and the changes stay pending, so `save()` can simply be called again. Transactions that save several models in different orders can deadlock like any such transactions; `DB::transaction($callback, attempts: 3)` retries them (start each attempt from fresh models). SQLite allows one writer at a time, so its writes never interleave.
+SQLite allows one writer at a time, so its writes never interleave.
+
+### Deadlocks and retries
+
+**The package never retries.** `save()` and `delete()` run their transaction once, so their model events, and whatever your listeners do, run once per call. A deadlock or serialization failure reaches your code like any other database error:
+
+- The transaction is rolled back and the translation changes stay pending, so calling `save()` again saves them (and runs the events again, because it is a new save).
+- Inside your own `DB::transaction()`, Laravel throws `DeadlockException`. The database has already rolled back the whole transaction, including models saved earlier in it, which still look saved: as with any Eloquent attribute, the model doesn't know.
+
+Saves of one model don't deadlock each other: they queue on its row. Transactions that save **several** models in different orders can deadlock, as any such transactions can. To retry them, retry the whole transaction, which is your decision:
+
+```php
+DB::transaction(function () use ($ids, $names, $editors) {
+    // Load inside the callback: every attempt starts from the database.
+    foreach (Wine::findMany($ids) as $wine) {
+        $wine->setTranslation('name', 'ka', $names[$wine->id])->save();
+    }
+
+    // Side effects that must happen once: after the commit.
+    DB::afterCommit(fn () => Notification::send($editors, new WinesTranslated($ids)));
+}, attempts: 3);
+```
+
+On every attempt the callback runs again, with all its model events and listeners. Database work is rolled back with the failed attempt, but **side effects outside the database are not**: an email sent or an API called from a `saved` listener happens once per attempt. Run them after the commit: `DB::afterCommit()`, observers with `$afterCommit = true`, events implementing `ShouldDispatchAfterCommit`, or queued jobs dispatched after commit (`afterCommit()`, or `after_commit` in the queue configuration). Those run once, for the attempt that commits. Models loaded outside the callback and saved in an attempt that failed look saved but aren't, so load or re-apply changes inside the callback.
 
 ### Other Eloquent behavior
 

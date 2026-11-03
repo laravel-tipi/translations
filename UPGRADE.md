@@ -9,6 +9,24 @@
 - `laravel-tipi/localization` ^0.2 (was ^0.1). Configure locales there.
 - The service provider is now `Tipi\Translations\TranslationsServiceProvider` (auto-discovered).
 
+### Database migrations
+
+Move your configuration to the 0.2 keys first ([Translation states](#translation-states) lists them): the migrations read the table names from them. Then:
+
+```bash
+php artisan vendor:publish --tag=translations-migrations
+php artisan migrate
+```
+
+Don't use `--force`. What happens:
+
+- **Your published 0.1 migrations stay untouched.** They are your migration history. They call `Tipi\Translations\Config\TranslationConfig`, which 0.2 keeps for them alone, so they still run on fresh databases (tests, CI, new environments). Don't use that class in code.
+- **Publishing adds only what you don't have:** `upgrade_translations_table_from_v0_1`, and `create_translation_states_table` if your 0.1 release predates translation states (before 0.1.16). Files you already have are skipped, matched by name. `--force` would overwrite them with 0.2 migrations, rewriting history that your databases already ran.
+- **`migrate` runs the upgrade**, which converts the 0.1 shared table (see [Shared-table data](#shared-table-data)). A table with rows is kept as `translations_v0_1`; an empty one, the usual case if you didn't use shared storage, is replaced.
+- **Fresh databases replay the same history**: the 0.1 tables, then the upgrade. They end with the same schema as your upgraded production database.
+
+The translation states table needs no change.
+
 ### Declaring a translatable model
 
 | 0.1 | 0.2 |
@@ -147,20 +165,13 @@ Unknown locales now throw Localization's `LocaleNotFoundException`.
 
 ### Removed classes
 
-Actions (`CreateTranslation`, `UpdateTranslation`, `DeleteTranslation`, `LockTranslatable`, `MarkOthersAsOutdated`), `TranslationManager`, `TranslationQueryManager`, `TranslationStateManager`, `TranslationDriverResolver`, `Enums\TranslationDriver`, `Config\TranslationConfig`, `Translation` (DTO), the three stores and three query drivers, `Providers\LocalizationLocaleProvider`, the contracts `LocaleProvider`, `TranslatableModel` (old shape), `TableTranslatableModel`, `DedicatedTableTranslatableModel`, `SharedTableTranslatableModel`, `JsonTranslatableModel`, `TranslationModel`, `HasTranslationStates` (interface), `TranslationQueryDriver`, the traits `HasDedicatedTableTranslations`, `HasLocalizedTranslations`, `HasTranslationQueries`, `InteractsWithTranslationStates`, `IsTranslation`, `HasTranslatablePolicy`, and the exceptions `DefaultTranslationCannotBeDeletedException`, `EmptyTranslationException`, `InvalidTranslationAttributeException` (now `AttributeNotTranslatableException`), `InvalidTranslationConfigurationException` (now `InvalidTranslatableModelException`), `TranslationAlreadyExistsException`, `TranslationDoesNotExistException`, `TranslationConfigurationException`. `TranslationException` is now an interface.
+Actions (`CreateTranslation`, `UpdateTranslation`, `DeleteTranslation`, `LockTranslatable`, `MarkOthersAsOutdated`), `TranslationManager`, `TranslationQueryManager`, `TranslationStateManager`, `TranslationDriverResolver`, `Enums\TranslationDriver`, `Translation` (DTO), the three stores and three query drivers, `Providers\LocalizationLocaleProvider`, the contracts `LocaleProvider`, `TranslatableModel` (old shape), `TableTranslatableModel`, `DedicatedTableTranslatableModel`, `SharedTableTranslatableModel`, `JsonTranslatableModel`, `TranslationModel`, `HasTranslationStates` (interface), `TranslationQueryDriver`, the traits `HasDedicatedTableTranslations`, `HasLocalizedTranslations`, `HasTranslationQueries`, `InteractsWithTranslationStates`, `IsTranslation`, `HasTranslatablePolicy`, and the exceptions `DefaultTranslationCannotBeDeletedException`, `EmptyTranslationException`, `InvalidTranslationAttributeException` (now `AttributeNotTranslatableException`), `InvalidTranslationConfigurationException` (now `InvalidTranslatableModelException`), `TranslationAlreadyExistsException`, `TranslationDoesNotExistException`, `TranslationConfigurationException`. `TranslationException` is now an interface.
 
 ### Shared-table data
 
 Shared storage now stores **one row per model, locale and attribute** with a JSON `value`, instead of one row per model and locale with a `values` object. One row per value lets concurrent writers use plain upserts: the old layout needed a locked read of each locale's row before merging, and on MySQL and MariaDB those locks deadlock writers of *different* models that share the table.
 
-The package ships a migration that converts a 0.1 table without deleting anything:
-
-```bash
-php artisan vendor:publish --tag=translations-upgrade-v0.1
-php artisan migrate
-```
-
-It creates the new table, copies every non-null value into it (keeping the rows' timestamps), renames the 0.1 table to `translations_v0_1` and the new one to `translations`. Check the result, then drop `translations_v0_1` yourself. Rolling the migration back restores the 0.1 table (and drops translations written since). It does nothing if the table isn't a 0.1 table, and it stops without renaming anything if a row's `values` isn't a JSON object.
+The `upgrade_translations_table_from_v0_1` migration (see [Database migrations](#database-migrations)) converts the table without losing anything. It creates the new table, copies every non-null value into it (keeping the rows' timestamps), and swaps the tables. A 0.1 table with rows is kept as `translations_v0_1`: check the result, then drop it yourself. Rolling the migration back restores it (and drops translations written since). It does nothing if the table isn't a 0.1 table, and it stops without renaming anything if a row's `values` isn't a JSON object.
 
 What carries over and what doesn't:
 
@@ -170,17 +181,7 @@ What carries over and what doesn't:
 | `translatable_id` (unsigned big integer) | copied; `morph_key_type` must be `null`/`'int'`, or `'string'` (the migration refuses `'uuid'` and `'ulid'`) |
 | `locale_code` (255 characters) | copied into a 16-character column, the longest code Localization accepts |
 | `values` keys and values | one row each; `null` values are skipped (they are missing translations) |
-| `outdated_at` (releases before 0.1.15) | not copied: it stays in `translations_v0_1`. 0.1.16 moved outdated tracking to `translation_states` |
+| `outdated_at` (0.1.0–0.1.15) | not copied: it stays in `translations_v0_1`. 0.1.16 moved outdated tracking to `translation_states` |
 | the unique index (any name) | the new table has `translations_owner_unique` on type, id, locale and attribute |
 
-On MySQL and MariaDB the migration of releases before 0.1.15 failed after creating the table (its index name was too long), so such tables may lack the unique index. The upgrade only reads the columns and works for them too.
-
-### Published migrations
-
-Your published 0.1 migrations (`create_translations_table`, `create_translation_states_table`) call `Tipi\Translations\Config\TranslationConfig`, which 0.2 removes. Existing databases are unaffected, since those migrations have already run, but **migrating a fresh database (tests, CI, new environments) fails**. Re-publish them:
-
-```bash
-php artisan vendor:publish --tag=translations-migrations --force
-```
-
-This replaces the files in place (same names, so they stay recorded as run) with the 0.2 versions, and fresh databases get the 0.2 tables directly. The upgrade migration then finds nothing to convert there. Delete `create_translations_table` if you don't use shared storage.
+On MySQL and MariaDB the migration of 0.1.0–0.1.12 failed after creating the table (its index name was too long), so such tables may lack the unique index. The upgrade only reads the columns and works for them too.

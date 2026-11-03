@@ -13,13 +13,16 @@ use Tipi\Translations\Support\MorphKeyType;
  | locale, a "values" JSON object) to v0.2 (one row per model, locale and
  | attribute, a "value" JSON value).
  |
- | Nothing is deleted: the v0.1 table is renamed to "{table}_v0_1" and its
- | rows are copied into a new table. Drop the old table once you have
- | checked the new one. Null values are not copied: they are missing
- | translations. Columns v0.1 kept besides "values" (such as the
- | "outdated_at" of releases before 0.1.16) stay in the old table only.
+ | Does nothing when the table is not a v0.1 table: on new installations,
+ | and when you don't use shared storage and removed its migration.
  |
- | Does nothing when the table is not a v0.1 table.
+ | Nothing is lost: the rows are copied into a new table and a v0.1 table
+ | with rows is kept as "{table}_v0_1". Drop it once you have checked the
+ | new table. An empty v0.1 table (shared storage unused, or a fresh
+ | database replaying 0.1 migrations) is dropped. Null values are not
+ | copied: they are missing translations. Columns v0.1 kept besides
+ | "values" (such as the "outdated_at" of releases before 0.1.16) stay in
+ | the kept table only.
  */
 return new class extends Migration
 {
@@ -96,13 +99,20 @@ return new class extends Migration
             }
         });
 
+        $empty = ! DB::table($table)->exists();
+
         Schema::rename($table, $legacy);
         Schema::rename($next, $table);
+
+        if ($empty) {
+            Schema::drop($legacy);
+        }
     }
 
     /**
-     * Restores the v0.1 table. Translations written since the upgrade are
-     * lost.
+     * Restores a kept v0.1 table. Translations written since the upgrade
+     * are lost. Without a kept table there is nothing to restore: the
+     * migration that created the table drops it.
      */
     public function down(): void
     {

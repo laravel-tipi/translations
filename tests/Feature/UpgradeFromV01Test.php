@@ -5,16 +5,15 @@ declare(strict_types=1);
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\ServiceProvider;
 use Tipi\Translations\Tests\Fixtures\Models\SharedArticle;
 use Tipi\Translations\Tests\Fixtures\Models\SharedCastArticle;
 use Tipi\Translations\Tests\TestCase;
-use Tipi\Translations\TranslationsServiceProvider;
 
 /*
  | The v0.1 shared table, as its migrations created it: one row per model
- | and locale with a "values" object. Releases before 0.1.15 also had an
- | "outdated_at" column and Laravel's default unique index name.
+ | and locale with a "values" object. 0.1.0–0.1.12 also had an
+ | "outdated_at" column (until 0.1.15) and Laravel's default unique index
+ | name.
  */
 
 function createV01Table(bool $early): void
@@ -63,7 +62,7 @@ function insertV01Row(string $type, int $id, string $locale, ?array $values, str
 
 function upgradeMigration(): object
 {
-    return require __DIR__.'/../../database/upgrades/upgrade_translations_table_from_v0_1.php';
+    return require __DIR__.'/../../database/migrations/upgrade_translations_table_from_v0_1.php';
 }
 
 it('copies v0.1 translations into the new table and keeps the old one', function (bool $early): void {
@@ -99,7 +98,7 @@ it('copies v0.1 translations into the new table and keeps the old one', function
 
     expect(SharedArticle::query()->findOrFail($article->id)->getTranslatedLocales())->toBe(['en', 'ka', 'de'])
         ->and(DB::table('translations_v0_1')->count())->toBe(4);
-})->with(['before 0.1.15' => true, '0.1.15 and later' => false]);
+})->with(['0.1.0–0.1.12' => true, '0.1.16 and later' => false]);
 
 it('restores the v0.1 table when rolled back', function (): void {
     createV01Table(early: false);
@@ -165,13 +164,17 @@ it('stops on malformed values, leaving the v0.1 table in place', function (): vo
         ->and(DB::table('translations_v0_1')->count())->toBe(2);
 });
 
-it('publishes the upgrade migration under its own tag only', function (): void {
-    $paths = ServiceProvider::pathsToPublish(TranslationsServiceProvider::class, 'translations-upgrade-v0.1');
-    $migrations = ServiceProvider::pathsToPublish(TranslationsServiceProvider::class, 'translations-migrations');
+it('drops an empty v0.1 table instead of keeping it', function (): void {
+    createV01Table(early: false);
 
-    expect($paths)->toHaveCount(1)
-        ->and(array_key_first($paths))->toBeFile()
-        ->and(array_values($paths)[0])->toEndWith('_upgrade_translations_table_from_v0_1.php')
-        ->and(implode(' ', array_keys($migrations)))->not->toContain('upgrade')
-        ->and(implode(' ', array_keys($migrations)))->toContain('create_translations_table');
+    upgradeMigration()->up();
+
+    expect(Schema::hasColumn('translations', 'attribute'))->toBeTrue()
+        ->and(Schema::hasTable('translations_v0_1'))->toBeFalse();
+
+    // Nothing to restore: rolling back leaves the table to the migration
+    // that created it.
+    upgradeMigration()->down();
+
+    expect(Schema::hasColumn('translations', 'attribute'))->toBeTrue();
 });

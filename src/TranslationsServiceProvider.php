@@ -16,16 +16,10 @@ final class TranslationsServiceProvider extends PackageServiceProvider
         $package
             ->name('translations')
             ->hasConfigFile()
-            ->hasMigrations(['create_translations_table', 'create_translation_states_table'])
+            // The upgrade runs after the create migrations and does nothing
+            // unless it finds a 0.1 shared table.
+            ->hasMigrations(['create_translations_table', 'create_translation_states_table', 'upgrade_translations_table_from_v0_1'])
             ->hasCommand(PruneOrphanedTranslationsCommand::class);
-    }
-
-    public function packageBooted(): void
-    {
-        // Only for applications that used shared storage in v0.1.
-        $this->publishes([
-            __DIR__.'/../database/upgrades/upgrade_translations_table_from_v0_1.php' => database_path('migrations/'.date('Y_m_d_His').'_upgrade_translations_table_from_v0_1.php'),
-        ], 'translations-upgrade-v0.1');
     }
 
     public function packageRegistered(): void

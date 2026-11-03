@@ -25,7 +25,9 @@ A redesign around a small model API and Localization 0.2.
 - `translations:prune-orphans` deletes shared translations and translation states left behind by deletes that bypass Eloquent (`--pretend` counts them).
 - `translations.morph_key_type`: `int`, `uuid`, `ulid` or `string` keys for the polymorphic tables (shared translations and states). `string` supports models with mixed key types in one table, on every database. `null` follows Laravel's default morph key type. Models whose keys don't fit throw `InvalidTranslatableModelException` before any query.
 - The model and its translation rows must share a connection; a translation model on another connection throws `InvalidTranslatableModelException` instead of writing outside the model's transaction.
-- A migration converting 0.1 shared tables without deleting data (`vendor:publish --tag=translations-upgrade-v0.1`).
+- `upgrade_translations_table_from_v0_1`, published with the other migrations, converts a 0.1 shared table without losing data, and does nothing on new installations.
+- `Config\TranslationConfig` remains, reduced to the two table names, so migrations published by 0.1 keep running on fresh databases.
+- Documented retry behavior: the package never retries a save or delete; regression tests cover deadlocks inside and outside transactions and application-level retries.
 - An opt-in benchmark comparing the storages (`vendor/bin/pest tests/Benchmarks`).
 - Query scopes `whereHasTranslation()`, `whereDoesntHaveTranslation()` and `withTranslations()`. Every translation scope accepts `fallback:`.
 - `orderByTranslation()` sorts missing values last on every database.
