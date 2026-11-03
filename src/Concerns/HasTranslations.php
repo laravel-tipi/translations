@@ -472,7 +472,9 @@ trait HasTranslations
      */
     public function save(array $options = []): bool
     {
-        if ($this->translationChanges === [] && ! $this->hasListenersBeforeWrite()) {
+        $stateChanges = method_exists($this, 'pendingTranslationStateChanges') ? $this->pendingTranslationStateChanges() : [];
+
+        if ($this->translationChanges === [] && $stateChanges === [] && ! $this->hasListenersBeforeWrite()) {
             return parent::save($options);
         }
 
@@ -481,9 +483,22 @@ trait HasTranslations
         $this->translationSaveDepth++;
 
         try {
-            return $this->getConnection()->transaction(fn (): bool => parent::save($options));
+            return $this->getConnection()->transaction(function () use ($options): bool {
+                $saved = parent::save($options);
+
+                // Drafts and sources (HasTranslationStates), in the same transaction.
+                if ($saved && method_exists($this, 'writeTranslationStateChanges')) {
+                    $this->writeTranslationStateChanges();
+                }
+
+                return $saved;
+            });
         } catch (Throwable $exception) {
             $this->restoreAfterFailedSave($before, $logged);
+
+            if (method_exists($this, 'restoreTranslationStateChanges')) {
+                $this->restoreTranslationStateChanges($stateChanges);
+            }
 
             throw $exception;
         } finally {
@@ -495,9 +510,9 @@ trait HasTranslations
 
     /**
      * Read, decide and write without lost updates. In one transaction:
-     * locks the model's row, reads its translations again with locking
-     * reads, calls $callback with the model, then saves what the callback
-     * changed. No other save of the model can change its translations
+     * locks the model's row, reads its translations (and translation states)
+     * again with locking reads, calls $callback with the model, then saves
+     * what the callback changed. No other save of the model can change its translations
      * between that read and the write, in any storage.
      *
      * The callback sees exactly what is stored, so it can compare it with
@@ -519,20 +534,23 @@ trait HasTranslations
             throw new LogicException('Translations of a model that is not saved yet cannot be locked.');
         }
 
-        if ($this->translationChanges !== []) {
+        $states = in_array(HasTranslationStates::class, class_uses_recursive(static::class), true);
+
+        if ($this->translationChanges !== [] || ($states && $this->pendingTranslationStateChanges() !== [])) {
             throw new LogicException('Save or discard the unsaved translation changes before locking the translations.');
         }
 
         try {
-            return $this->getConnection()->transaction(function () use ($callback): mixed {
+            return $this->getConnection()->transaction(function () use ($callback, $states): mixed {
                 if (! $this->lockTranslationOwner()) {
                     throw (new ModelNotFoundException)->setModel(static::class, [$this->getKey()]);
                 }
 
                 $this->reloadTranslationsForUpdate();
 
-                if (in_array(HasTranslationStates::class, class_uses_recursive(static::class), true)) {
-                    $this->unsetRelation('translationStates');
+                if ($states) {
+                    // Drafts and sources are read, decided and written too.
+                    $this->setRelation('translationStates', $this->translationStates()->lockForUpdate()->get());
                 }
 
                 $result = $callback($this);
@@ -543,6 +561,10 @@ trait HasTranslations
             });
         } catch (Throwable $exception) {
             $this->translationChanges = [];
+
+            if ($states) {
+                $this->restoreTranslationStateChanges([]);
+            }
 
             throw $exception;
         }

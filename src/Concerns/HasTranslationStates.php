@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Arr;
 use Tipi\Support\Locale;
+use Tipi\Translations\Exceptions\AttributeNotTranslatableException;
 use Tipi\Translations\Exceptions\InvalidTranslatableModelException;
 use Tipi\Translations\Models\TranslationState;
 
@@ -30,6 +31,14 @@ trait HasTranslationStates
      *
      * @return MorphMany<TranslationState, $this>
      */
+    /**
+     * Draft and source changes not written yet: locale => kind
+     * ("drafts", "sources") => attribute => value (null removes).
+     *
+     * @var array<string, array<string, array<string, mixed>>>
+     */
+    protected array $translationStateChanges = [];
+
     public function translationStates(): MorphMany
     {
         return $this->translationMorphMany(config('translations.states.model', TranslationState::class));
@@ -108,6 +117,172 @@ trait HasTranslationStates
         return $this->saveTranslationState($state);
     }
 
+    /*
+     | Drafts
+     |
+     | A draft is an unpublished value of an attribute in a locale: work in
+     | progress kept beside the published value. Reading translations
+     | ($model->name, getTranslation(), fallback, queries, serialization)
+     | never sees drafts, so an unfinished translation is never shown.
+     | Publishing a draft is setting the translation and forgetting the
+     | draft, which the application does explicitly.
+     */
+
+    public function getTranslationDraft(string $attribute, string|Locale $locale): mixed
+    {
+        return $this->stateValue('drafts', $attribute, $locale);
+    }
+
+    public function hasTranslationDraft(string $attribute, string|Locale $locale): bool
+    {
+        return $this->getTranslationDraft($attribute, $locale) !== null;
+    }
+
+    /**
+     * @return array<string, mixed> attribute => draft
+     */
+    public function getTranslationDrafts(string|Locale $locale): array
+    {
+        return $this->stateValues('drafts', $locale);
+    }
+
+    /**
+     * Set a draft, written by the next save() in its transaction. Null
+     * removes it.
+     */
+    public function setTranslationDraft(string $attribute, string|Locale $locale, mixed $value): static
+    {
+        return $this->changeStateValue('drafts', $attribute, $locale, $value);
+    }
+
+    public function forgetTranslationDraft(string $attribute, string|Locale $locale): static
+    {
+        return $this->setTranslationDraft($attribute, $locale, null);
+    }
+
+    /*
+     | Sources
+     |
+     | What a translation was made from: any JSON value per attribute and
+     | locale (a fingerprint of the source text, per segment, a revision
+     | id), set by whoever translates and compared by them to tell when the
+     | source changed since. Written like drafts.
+     */
+
+    public function getTranslationSource(string $attribute, string|Locale $locale): mixed
+    {
+        return $this->stateValue('sources', $attribute, $locale);
+    }
+
+    public function setTranslationSource(string $attribute, string|Locale $locale, mixed $value): static
+    {
+        return $this->changeStateValue('sources', $attribute, $locale, $value);
+    }
+
+    /**
+     * Unsaved draft and source changes: locale => kind => attribute => value.
+     *
+     * @return array<string, array<string, array<string, mixed>>>
+     */
+    public function getDirtyTranslationStates(): array
+    {
+        return $this->translationStateChanges;
+    }
+
+    private function stateValue(string $kind, string $attribute, string|Locale $locale): mixed
+    {
+        $this->ensureTranslatableState($attribute);
+        $code = $this->translationLocales()->code($locale);
+
+        if (array_key_exists($attribute, $this->translationStateChanges[$code][$kind] ?? [])) {
+            return $this->translationStateChanges[$code][$kind][$attribute];
+        }
+
+        return $this->getTranslationState($code)?->getAttribute($kind)[$attribute] ?? null;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function stateValues(string $kind, string|Locale $locale): array
+    {
+        $code = $this->translationLocales()->code($locale);
+        $values = array_replace($this->getTranslationState($code)?->getAttribute($kind) ?? [], $this->translationStateChanges[$code][$kind] ?? []);
+
+        $values = array_filter($values, fn (mixed $value): bool => $value !== null);
+
+        // In declaration order: databases may reorder JSON keys.
+        return array_intersect_key(array_replace(array_flip($this->getTranslatableAttributes()), $values), $values);
+    }
+
+    private function changeStateValue(string $kind, string $attribute, string|Locale $locale, mixed $value): static
+    {
+        $this->ensureTranslatableState($attribute);
+
+        $this->translationStateChanges[$this->translationLocales()->code($locale)][$kind][$attribute] = $value;
+
+        return $this;
+    }
+
+    private function ensureTranslatableState(string $attribute): void
+    {
+        if (! $this->isTranslatableAttribute($attribute)) {
+            throw new AttributeNotTranslatableException(static::class, $attribute);
+        }
+    }
+
+    /**
+     * Inside save()'s transaction, after the model row and translations:
+     * merge the pending draft and source changes into the locked state
+     * rows. Other attributes' values written meanwhile are kept.
+     */
+    protected function writeTranslationStateChanges(): void
+    {
+        if ($this->translationStateChanges === []) {
+            return;
+        }
+
+        $this->lockTranslationOwnerOrFail();
+
+        foreach ($this->translationLocales()->sort($this->translationStateChanges) as $locale => $kinds) {
+            $state = $this->translationStates()->where('locale_code', (string) $locale)->lockForUpdate()->first()
+                ?? $this->translationStates()->make(['locale_code' => (string) $locale]);
+
+            foreach ($kinds as $kind => $values) {
+                $merged = array_filter(
+                    array_replace($state->getAttribute($kind) ?? [], $values),
+                    fn (mixed $value): bool => $value !== null,
+                );
+
+                $state->setAttribute($kind, $merged === [] ? null : $merged);
+            }
+
+            if ($state->exists || $state->getAttribute('drafts') !== null || $state->getAttribute('sources') !== null) {
+                $this->ensureTranslationConnection($state);
+                $state->save();
+            }
+        }
+
+        $this->translationStateChanges = [];
+        $this->unsetRelation('translationStates');
+    }
+
+    /**
+     * @return array<string, array<string, array<string, mixed>>>
+     */
+    protected function pendingTranslationStateChanges(): array
+    {
+        return $this->translationStateChanges;
+    }
+
+    /**
+     * @param  array<string, array<string, array<string, mixed>>>  $changes
+     */
+    protected function restoreTranslationStateChanges(array $changes): void
+    {
+        $this->translationStateChanges = $changes;
+    }
+
     /**
      * Called by save() for the locales whose translations changed.
      *
@@ -125,6 +300,16 @@ trait HasTranslationStates
             }
 
             $state = $this->loadedTranslationStates()->firstWhere('locale_code', $locale);
+
+            // A locale with drafts keeps them, without the outdated flag.
+            if ($state !== null && ($state->drafts ?? []) !== []) {
+                if ($state->outdated_at !== null) {
+                    $state->outdated_at = null;
+                    $state->save();
+                }
+
+                continue;
+            }
 
             if ($state !== null) {
                 $state->delete();

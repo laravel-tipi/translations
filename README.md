@@ -642,7 +642,7 @@ All three have the same API, so you can change a model's storage later without c
 
 ## Translation states
 
-Optional editorial metadata per translated locale: whether it is **outdated**, and an optional **status** from your own enum.
+Optional editorial metadata per translated locale: whether it is **outdated**, an optional **status** from your own enum, unpublished [drafts](#drafts) and [source fingerprints](#sources).
 
 ```bash
 php artisan vendor:publish --tag=translations-config
@@ -674,7 +674,40 @@ $wine->markTranslationOutdated('ka');
 $wine->markTranslationCurrent('ka');
 ```
 
-States are kept in sync on `save()`. A locale whose translations changed is marked current, because someone just edited it. A locale that lost all its values loses its state. An already outdated locale keeps the time it became outdated. States are deleted with the model, and kept on soft delete.
+States are kept in sync on `save()`. A locale whose translations changed is marked current, because someone just edited it. A locale that lost all its values loses its state, unless it has drafts. An already outdated locale keeps the time it became outdated. States are deleted with the model, and kept on soft delete.
+
+### Drafts
+
+A draft is an **unpublished** value of an attribute in a locale, kept beside the published one: work in progress that readers must not see yet, such as a half-translated document.
+
+```php
+$wine->setTranslationDraft('description', 'ka', $partial)->save();
+
+$wine->getTranslation('description', 'ka');      // the published value (or null): never the draft
+$wine->description;                               // published or fallback: never the draft
+$wine->getTranslationDraft('description', 'ka'); // $partial
+$wine->getTranslationDrafts('ka');               // ['description' => $partial]
+
+// Publishing is explicit: set the translation, forget the draft.
+$wine->setTranslation('description', 'ka', $complete)
+    ->forgetTranslationDraft('description', 'ka')
+    ->save();
+```
+
+- Reading translations never sees drafts: attribute access, `getTranslation()`, fallback, `getAllTranslations()`, query scopes and serialization (drafts are hidden on `TranslationState`).
+- Drafts are pending until `save()`, which writes them in its transaction with the model's row locked, after the translations. A failed save writes none and keeps them pending. A save with only draft changes doesn't update the model (no timestamps, no `updated` event).
+- Drafts of different attributes of a locale merge: each save changes only its own attributes in the locale's state row.
+- `lockTranslationsForUpdate()` reads drafts again with locking reads, so a callback can decide from them too; drafts it set are discarded if it fails.
+- Writing a translation doesn't forget its draft: an application writing published values while a translator works on a draft never discards the translator's work behind their back.
+
+### Sources
+
+What a translation was made from, per attribute and locale: any JSON value (a fingerprint of the source text, a revision number, one fingerprint per paragraph), set and compared by the code that translates, to tell when the source changed since. Written like drafts.
+
+```php
+$wine->setTranslationSource('description', 'ka', ['0' => md5($paragraph)])->save();
+$wine->getTranslationSource('description', 'ka');
+```
 
 The states table is polymorphic, like shared storage: its `translatable_id` follows [`morph_key_type`](#model-keys-and-morph-types), and [`translations:prune-orphans`](#integrity-without-a-foreign-key) cleans up after deletes that bypass Eloquent.
 

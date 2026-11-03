@@ -22,6 +22,13 @@ class TranslationState extends Model
 {
     protected $guarded = [];
 
+    /**
+     * Drafts are unpublished content: never part of serialized output.
+     *
+     * @var list<string>
+     */
+    protected $hidden = ['drafts', 'sources'];
+
     public function getTable(): string
     {
         return (string) config('translations.states.table', 'translation_states');
@@ -66,6 +73,8 @@ class TranslationState extends Model
 
         return [
             'outdated_at' => 'immutable_datetime',
+            'drafts' => 'array',
+            'sources' => 'array',
             ...($enum === null ? [] : ['status' => $enum]),
         ];
     }

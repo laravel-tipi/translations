@@ -9,7 +9,8 @@ use Tipi\Translations\Support\MorphKeyType;
 
 /*
  | Translation states (HasTranslationStates): one row per model and
- | locale.
+ | locale, with its workflow data: outdated flag, status, drafts and source
+ | fingerprints.
  |
  | The translatable_id column follows [translations.morph_key_type]. Run
  | this migration on every connection whose models use states.
@@ -28,6 +29,11 @@ return new class extends Migration
 
             $table->string('status')->nullable();
             $table->timestamp('outdated_at')->nullable();
+
+            // Unpublished drafts and the source each translation was made
+            // from: attribute => value. Never read as translations.
+            $table->json('drafts')->nullable();
+            $table->json('sources')->nullable();
             $table->timestamps();
 
             $table->unique(['translatable_type', 'translatable_id', 'locale_code'], "{$name}_owner_locale_unique");
