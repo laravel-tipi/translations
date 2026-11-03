@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Illuminate\Database\DeadlockException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
@@ -383,3 +384,101 @@ it('recovers from a deadlock between transactions saving two models in opposite 
         ->and($class::query()->findOrFail($first)->getTranslations('de'))->toBe(['title' => "de {$first}"])
         ->and($class::query()->findOrFail($second)->getTranslatedLocales())->toEqualCanonicalizing(['en', 'ka', 'de']);
 })->with(['json' => JsonArticle::class, 'table' => TableArticle::class, 'shared' => SharedArticle::class]);
+
+/*
+ | lockTranslationsForUpdate(): read-modify-write without lost updates.
+ */
+
+it('loses no read-modify-write of concurrent writers', function (string $class): void {
+    $article = article($class, ['en' => ['title' => 'Saperavi'], 'ka' => ['title' => '']]);
+
+    $writers = [];
+
+    foreach (['a', 'b', 'c', 'd'] as $name) {
+        $writers[] = function (Closure $sync) use ($class, $article, $name): void {
+            $copy = $class::query()->findOrFail($article->getKey());
+            $copy->getAllTranslations();
+            $sync();
+
+            foreach (range(1, 3) as $round) {
+                $copy->lockTranslationsForUpdate(
+                    fn ($model) => $model->setTranslation('title', 'ka', $model->getTranslation('title', 'ka').$name),
+                );
+            }
+        };
+    }
+
+    expect(concurrently($writers))->toBe([null, null, null, null]);
+
+    $letters = str_split((string) reload($article)->getTranslation('title', 'ka'));
+    sort($letters);
+
+    expect(implode('', $letters))->toBe('aaabbbcccddd');
+})->with('concurrent models');
+
+it('lets exactly one of two compare-and-set writers win', function (string $class): void {
+    $article = article($class, ['en' => ['title' => 'Saperavi'], 'ka' => ['title' => 'base']]);
+
+    $compareAndSet = fn (string $value): Closure => function (Closure $sync) use ($class, $article, $value): void {
+        $copy = $class::query()->findOrFail($article->getKey());
+        $expected = $copy->getTranslation('title', 'ka');
+        $sync();
+
+        $copy->lockTranslationsForUpdate(function ($model) use ($expected, $value): void {
+            if ($model->getTranslation('title', 'ka') !== $expected) {
+                throw new RuntimeException('Conflict');
+            }
+
+            usleep(200_000);
+            $model->setTranslation('title', 'ka', $value);
+        });
+    };
+
+    $errors = concurrently([$compareAndSet('first'), $compareAndSet('second')]);
+
+    expect(array_values(array_filter($errors)))->toBe(['RuntimeException: Conflict']);
+
+    $winner = $errors[0] === null ? 'first' : 'second';
+
+    expect(reload($article)->getTranslation('title', 'ka'))->toBe($winner);
+})->with('concurrent models');
+
+it('never decides from a stale snapshot of a surrounding transaction', function (string $class): void {
+    $article = article($class, ['en' => ['title' => 'Saperavi']]);
+
+    $errors = concurrently([
+        function (Closure $sync) use ($class, $article): void {
+            DB::transaction(function () use ($sync, $class, $article): void {
+                // A plain read first: on MySQL and MariaDB it fixes the
+                // transaction's snapshot before the other writer commits.
+                $copy = $class::query()->findOrFail($article->getKey());
+                $copy->getAllTranslations();
+
+                $sync();
+                $sync();
+
+                $seen = $copy->lockTranslationsForUpdate(fn ($model) => $model->getTranslation('title', 'ka'));
+
+                if ($seen !== 'საფერავი') {
+                    throw new RuntimeException('Read a stale value: '.var_export($seen, true));
+                }
+            });
+        },
+        function (Closure $sync) use ($class, $article): void {
+            $sync();
+            $class::query()->findOrFail($article->getKey())->setTranslation('title', 'ka', 'საფერავი')->save();
+            $sync();
+        },
+    ]);
+
+    // MySQL and PostgreSQL read the committed value. MariaDB's snapshot
+    // isolation refuses the locking read instead, with a deadlock error
+    // that rolls the transaction back, so it can be retried.
+    expect($errors[1])->toBeNull()
+        ->and($errors[0] === null || str_contains($errors[0], 'Record has changed since last read'))->toBeTrue();
+
+    if ($errors[0] !== null) {
+        expect($errors[0])->toStartWith(DeadlockException::class)
+            ->and(TestCase::databaseDriver())->toBe('mariadb');
+    }
+})->with('concurrent models');

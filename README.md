@@ -423,7 +423,33 @@ Concurrent saves of the same model, from separate processes, behave like this on
 - **Table storage** locks the model row, then writes each changed locale with one atomic upsert of the changed columns, and deletes an emptied row only if it is still empty when deleted.
 - **Shared storage** locks the model row, then writes every changed value with one atomic upsert (each value is its own row) and deletes removed values. It never reads rows with locks, so writers of *different* models sharing the table don't block each other.
 
-Each storage locks the model's row before writing rows, and `delete()` locks it before deleting them, so a model is never deleted between the check and the write. These rules are tested with concurrent processes on MySQL, MariaDB and PostgreSQL, including many writers on different models of one shared table. The package doesn't add optimistic locking: the same value saved by two editors is last-write-wins, as for any Eloquent attribute. Changes are computed from the model as you loaded it, so setting a value to what *your copy* already holds is no change, even if another process changed it meanwhile.
+Each storage locks the model's row before writing rows, and `delete()` locks it before deleting them, so a model is never deleted between the check and the write. These rules are tested with concurrent processes on MySQL, MariaDB and PostgreSQL, including many writers on different models of one shared table. A plain `save()` doesn't check what others saved: the same value saved by two editors is last-write-wins, as for any Eloquent attribute. Changes are computed from the model as you loaded it, so setting a value to what *your copy* already holds is no change, even if another process changed it meanwhile. To decide from what is stored *now*, use `lockTranslationsForUpdate()`.
+
+### Read-modify-write
+
+`lockTranslationsForUpdate()` reads, decides and writes in one transaction, without lost updates:
+
+```php
+$wine->lockTranslationsForUpdate(function (Wine $wine) use ($expected, $name): void {
+    // Exactly what is stored now, read with the model's row locked.
+    if ($wine->getTranslation('name', 'ka') !== $expected) {
+        throw new NameChangedMeanwhile;
+    }
+
+    $wine->setTranslation('name', 'ka', $name);
+}); // saved before the lock is released
+```
+
+1. It locks the model's row and reads its translations again with locking reads (and drops loaded translation states, so they are read again).
+2. It calls the callback with the model, which may change translations, or throw to abort.
+3. It saves the model and commits.
+
+Every save of the model locks the same row, so no other save can change its translations between steps 1 and 3, in any storage. Use it for optimistic concurrency (compare with what a user started from, as above), for merges and for appends. It returns what the callback returns.
+
+- It throws `ModelNotFoundException` when the model was deleted, and `LogicException` for a model that isn't saved yet or has unsaved translation changes (they were computed from an older read: save or discard them first).
+- When the callback or the save throws, nothing is written and the changes the callback made are discarded, because they were decided from a read whose lock is gone. Call it again to retry.
+- Inside your own `DB::transaction()` it uses a savepoint, and the lock lasts until your transaction commits.
+- If your transaction read the model before, MySQL and PostgreSQL still hand the callback what is committed now. MariaDB (11.6+, `innodb_snapshot_isolation`) refuses the locking read instead with a `DeadlockException`, which rolls your transaction back so it can be retried. The callback never sees a stale value.
 
 SQLite allows one writer at a time, so its writes never interleave.
 

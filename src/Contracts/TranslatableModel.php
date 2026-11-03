@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tipi\Translations\Contracts;
 
+use Closure;
 use Tipi\Localization\Exceptions\LocaleNotFoundException;
 use Tipi\Support\Locale;
 use Tipi\Translations\Exceptions\AttributeNotTranslatableException;
@@ -126,4 +127,18 @@ interface TranslatableModel
      * @return array<string, array<string, mixed>>
      */
     public function getDirtyTranslations(): array;
+
+    /**
+     * Read, decide and write in one transaction: locks the model's row,
+     * reads its translations again with locking reads, calls $callback
+     * with the model and saves what it changed. When the callback or the
+     * save throws, nothing is written and the callback's changes are
+     * discarded.
+     *
+     * @template TReturn
+     *
+     * @param  Closure(static): TReturn  $callback
+     * @return TReturn
+     */
+    public function lockTranslationsForUpdate(Closure $callback): mixed;
 }
