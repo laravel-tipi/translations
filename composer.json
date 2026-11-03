@@ -25,6 +25,8 @@
         "spatie/laravel-package-tools": "^1.93"
     },
     "require-dev": {
+        "ext-pcntl": "*",
+        "ext-posix": "*",
         "laravel/pint": "^1.32",
         "orchestra/testbench": "^11.3",
         "pestphp/pest": "^5.3",
@@ -49,12 +51,55 @@
     },
     "scripts": {
         "test": "pest",
+        "test:mysql": [
+            "Composer\\Config::disableProcessTimeout",
+            "@putenv TRANSLATIONS_TEST_DB=mysql",
+            "@putenv TRANSLATIONS_TEST_DB_HOST=127.0.0.1",
+            "@putenv TRANSLATIONS_TEST_DB_PORT=33061",
+            "@putenv TRANSLATIONS_TEST_DB_PASSWORD=secret",
+            "pest"
+        ],
+        "test:mariadb": [
+            "Composer\\Config::disableProcessTimeout",
+            "@putenv TRANSLATIONS_TEST_DB=mariadb",
+            "@putenv TRANSLATIONS_TEST_DB_HOST=127.0.0.1",
+            "@putenv TRANSLATIONS_TEST_DB_PORT=33062",
+            "@putenv TRANSLATIONS_TEST_DB_PASSWORD=secret",
+            "pest"
+        ],
+        "test:pgsql": [
+            "Composer\\Config::disableProcessTimeout",
+            "@putenv TRANSLATIONS_TEST_DB=pgsql",
+            "@putenv TRANSLATIONS_TEST_DB_HOST=127.0.0.1",
+            "@putenv TRANSLATIONS_TEST_DB_PORT=33063",
+            "@putenv TRANSLATIONS_TEST_DB_PASSWORD=secret",
+            "pest"
+        ],
+        "test:all": [
+            "@test",
+            "@test:mysql",
+            "@test:mariadb",
+            "@test:pgsql"
+        ],
         "format": "pint",
         "format:test": "pint --test",
         "check": [
             "@format:test",
             "@test"
+        ],
+        "check:all": [
+            "@format:test",
+            "@test:all"
         ]
+    },
+    "scripts-descriptions": {
+        "test": "Run the test suite on in-memory SQLite.",
+        "test:mysql": "Run the test suite on the MySQL service of compose.yaml.",
+        "test:mariadb": "Run the test suite on the MariaDB service of compose.yaml.",
+        "test:pgsql": "Run the test suite on the PostgreSQL service of compose.yaml.",
+        "test:all": "Run the test suite on SQLite, MySQL, MariaDB and PostgreSQL.",
+        "check": "Check formatting and run the test suite on SQLite.",
+        "check:all": "Check formatting and run the test suite on all four databases."
     },
     "config": {
         "sort-packages": true,

@@ -1119,6 +1119,10 @@ trait HasTranslations
             throw new InvalidArgumentException("Unsupported translation query operator [{$operator}].");
         }
 
+        if (str_contains($operator, 'ilike') && $query->getConnection()->getDriverName() !== 'pgsql') {
+            throw new InvalidArgumentException("Operator [{$operator}] is only supported on PostgreSQL.");
+        }
+
         $translation = $this->translationQueryValue($query, $attribute, $locale, $fallback);
 
         if ($value === null) {

@@ -6,6 +6,7 @@ use Illuminate\Database\ClassMorphViolationException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Database\QueryException;
 use Illuminate\Database\Schema\Builder as SchemaBuilder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -124,15 +125,22 @@ describe('storage', function (): void {
             ->and(SharedArticle::pluckTranslation('title', locale: 'ka', fallback: true)->all())->toBe([$article->id => 'Saperavi']);
     });
 
-    it('reads malformed stored JSON as an error', function (): void {
+    it('never reads malformed stored JSON as a value', function (): void {
         $article = article(SharedArticle::class, ['en' => ['title' => 'Saperavi']]);
-        DB::table('translations')->update(['value' => '{not json']);
+        $corrupt = fn () => DB::table('translations')->update(['value' => '{not json']);
 
-        reload($article)->getTranslation('title', 'en');
-    })->throws(MalformedTranslationsException::class)->skip(
-        fn () => TestCase::databaseDriver() !== 'sqlite',
-        'MySQL, MariaDB and PostgreSQL validate JSON columns themselves.',
-    );
+        if (TestCase::databaseDriver() !== 'sqlite') {
+            // MySQL, MariaDB and PostgreSQL validate the JSON column.
+            expect($corrupt)->toThrow(QueryException::class)
+                ->and(reload($article)->getTranslation('title', 'en'))->toBe('Saperavi');
+
+            return;
+        }
+
+        $corrupt();
+
+        expect(fn () => reload($article)->getTranslation('title', 'en'))->toThrow(MalformedTranslationsException::class);
+    });
 
     it('uses the configured table', function (): void {
         config(['translations.shared.table' => 'wine_translations']);

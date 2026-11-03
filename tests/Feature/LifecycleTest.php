@@ -289,11 +289,18 @@ it('keeps translations pending when a listener cancels the save', function (stri
 })->with('models')->with(['saving', 'creating']);
 
 it('writes translations with saveOrIgnore()', function (string $class): void {
-    if (in_array(TestCase::databaseDriver(), ['mysql', 'mariadb'], true)) {
-        $this->markTestSkipped('Laravel does not support saveOrIgnore() on MySQL and MariaDB.');
-    }
-
     $article = (new $class(['slug' => 'saperavi']))->setTranslation('title', 'en', 'Saperavi');
+
+    if (in_array(TestCase::databaseDriver(), ['mysql', 'mariadb'], true)) {
+        // Laravel has no insert-or-ignore with RETURNING on MySQL and
+        // MariaDB: the save fails like any other and keeps its changes.
+        expect(fn () => $article->saveOrIgnore())->toThrow(RuntimeException::class, 'does not support insert or ignore with returning')
+            ->and($class::query()->count())->toBe(0)
+            ->and($article->exists)->toBeFalse()
+            ->and($article->getDirtyTranslations())->toBe(['en' => ['title' => 'Saperavi']]);
+
+        return;
+    }
 
     expect($article->saveOrIgnore())->toBeTrue()
         ->and(reload($article)->getTranslation('title', 'en'))->toBe('Saperavi')

@@ -28,7 +28,7 @@ A rewrite around a small model API and Localization 0.2. It shares no API, confi
 - Table and shared storage expose a `translations()` relation, hidden from `toArray()`. Rows are written with upserts: casts and mutators apply, the translation model's events don't fire.
 - JSON storage reads and writes its columns itself (no `array` cast), stores unescaped UTF-8 ordered by locale display order, and stores `NULL` instead of an empty object.
 - Serialization returns resolved values in every storage.
-- Query scopes `whereTranslation()`, `orderByTranslation()`, `pluckTranslation()`, `whereHasTranslation()`, `whereDoesntHaveTranslation()` and `withTranslations()`. Every translation scope accepts `fallback:`. `orderByTranslation()` sorts missing values last on every database.
+- Query scopes `whereTranslation()`, `orderByTranslation()`, `pluckTranslation()`, `whereHasTranslation()`, `whereDoesntHaveTranslation()` and `withTranslations()`. Every translation scope accepts `fallback:`. `ilike` and `not ilike` are PostgreSQL only and throw `InvalidArgumentException` on other databases. `orderByTranslation()` sorts missing values last on every database.
 - JSON- and shared-storage queries compare by the stored JSON type: numbers numerically (with numeric operands) and other values as text in the connection's collation, so the storages compare and sort the same way on every database. Unsupported operands (booleans, arrays, `like` with a number) throw `InvalidArgumentException`.
 - `pluckTranslation()` returns values typed like model reads: cast by the translation model, or decoded JSON.
 - `TranslatableColumnQueryException`: `where()`, `orderBy()` and `firstOrCreate()` lookups on a translatable attribute throw instead of matching nothing or creating duplicates.
@@ -38,4 +38,4 @@ A rewrite around a small model API and Localization 0.2. It shares no API, confi
 - `replicate()` copies translations in every storage.
 - Two migrations, `create_translations_table` and `create_translation_states_table`, configured by `translations.shared.*`, `translations.states.*` and `translations.morph_key_type`.
 - Exceptions implement the `TranslationException` interface. Locale errors use Localization's exceptions.
-- The test suite runs on SQLite, MySQL, MariaDB and PostgreSQL, including query-count tests and multi-process concurrency tests, plus an opt-in storage benchmark (`vendor/bin/pest tests/Benchmarks`).
+- The test suite runs on SQLite, MySQL, MariaDB and PostgreSQL (`composer check:all` with the bundled `compose.yaml`), including query-count tests and multi-process concurrency tests, plus an opt-in storage benchmark (`vendor/bin/pest tests/Benchmarks`).

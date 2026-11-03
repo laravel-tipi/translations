@@ -60,11 +60,22 @@ it('orders with the same collation', function (): void {
     expect($results['json'])->toBe($results['table'])->and($results['shared'])->toBe($results['table']);
 });
 
-it('matches case-insensitively with ilike on PostgreSQL', function (): void {
-    $results = allStorages(fn ($query) => $query->whereTranslation('title', 'ilike', 'b%', 'en'));
+it('matches case-insensitively with ilike on PostgreSQL and rejects it elsewhere', function (): void {
+    if (TestCase::databaseDriver() === 'pgsql') {
+        $results = allStorages(fn ($query) => $query->whereTranslation('title', 'ilike', 'b%', 'en'));
 
-    expect($results)->toBe(['json' => ['Banana'], 'table' => ['Banana'], 'shared' => ['Banana']]);
-})->skip(fn () => TestCase::databaseDriver() !== 'pgsql', 'ilike is PostgreSQL only');
+        expect($results)->toBe(['json' => ['Banana'], 'table' => ['Banana'], 'shared' => ['Banana']]);
+
+        return;
+    }
+
+    foreach ([JsonArticle::class, TableArticle::class, SharedArticle::class] as $class) {
+        expect(fn () => $class::whereTranslation('title', 'ilike', 'b%', 'en'))
+            ->toThrow(InvalidArgumentException::class, 'Operator [ilike] is only supported on PostgreSQL.')
+            ->and(fn () => $class::whereTranslation('title', 'not ilike', 'b%', 'en'))
+            ->toThrow(InvalidArgumentException::class, 'Operator [not ilike] is only supported on PostgreSQL.');
+    }
+});
 
 it('does not fall back from an empty string in queries', function (string $class): void {
     $article = article($class, ['en' => ['title' => 'Saperavi'], 'ka' => ['title' => '']]);

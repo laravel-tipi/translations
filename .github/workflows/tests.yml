@@ -57,6 +57,14 @@ jobs:
           extensions: pdo_sqlite, pdo_mysql, pdo_pgsql, pcntl, posix
           coverage: none
           tools: composer:v2
+        env:
+          # A missing extension fails the job instead of skipping tests.
+          fail-fast: true
+
+      - name: Show versions
+        run: |
+          php -v
+          php -r 'echo "SQLite ", (new PDO("sqlite::memory:"))->query("select sqlite_version()")->fetchColumn(), PHP_EOL;'
 
       - name: Validate Composer
         run: composer validate --strict

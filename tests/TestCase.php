@@ -7,6 +7,7 @@ namespace Tipi\Translations\Tests;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Facade;
 use Orchestra\Testbench\TestCase as Orchestra;
+use RuntimeException;
 use Tipi\Localization\Config\LocalizationConfig;
 use Tipi\Localization\LocaleContexts;
 use Tipi\Localization\LocaleRegistry;
@@ -72,9 +73,23 @@ abstract class TestCase extends Orchestra
         ];
     }
 
+    /**
+     * SQLite when TRANSLATIONS_TEST_DB is not set. Any other value must
+     * name a supported database, so a typo can't fall back to SQLite.
+     */
     public static function databaseDriver(): string
     {
-        return getenv('TRANSLATIONS_TEST_DB') ?: 'sqlite';
+        $driver = getenv('TRANSLATIONS_TEST_DB');
+
+        if ($driver === false) {
+            return 'sqlite';
+        }
+
+        if (! in_array($driver, ['sqlite', 'mysql', 'mariadb', 'pgsql'], true)) {
+            throw new RuntimeException("TRANSLATIONS_TEST_DB must be sqlite, mysql, mariadb or pgsql, [{$driver}] given.");
+        }
+
+        return $driver;
     }
 
     protected function defineDatabaseMigrations(): void

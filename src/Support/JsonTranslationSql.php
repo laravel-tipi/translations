@@ -43,7 +43,10 @@ final readonly class JsonTranslationSql
         $path = '$."'.addcslashes($locale, '"\\').'"';
 
         return match ($this->driver) {
-            'sqlite' => ["json_extract({$column}, ?)", [$path]],
+            // The member by its key, not by a path: older SQLite (3.46 on
+            // Ubuntu 24.04) ends a quoted path label at the first `"` and
+            // ignores escapes, so such a locale would match nothing.
+            'sqlite' => ["(select value from json_each({$column}) where key = ?)", [$locale]],
             'mysql', 'mariadb' => ["nullif(json_extract({$column}, ?), json_extract('null', '$'))", [$path]],
             default => ["nullif(({$column})::jsonb -> (?)::text, 'null'::jsonb)", [$locale]],
         };

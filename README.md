@@ -473,7 +473,7 @@ Deletes that bypass Eloquent (query builder, raw SQL) don't touch translation ro
 // Current locale, exact value:
 Wine::whereTranslation('name', '=', 'საფერავი')->get();
 
-// Explicit locale, any supported operator (=, !=, <>, <, >, <=, >=, like, not like, ilike, not ilike):
+// Explicit locale, any supported operator (=, !=, <>, <, >, <=, >=, like, not like; ilike and not ilike on PostgreSQL):
 Wine::whereTranslation('name', 'like', '%sap%', 'en')->get();
 
 // What visitors see: the current locale with fallback:
@@ -494,7 +494,7 @@ Wine::pluckTranslation('name');                        // [id => name] in the cu
 Wine::active()->pluckTranslation('name', 'slug', fallback: true);
 ```
 
-The same rule as reading applies. Query scopes use the exact locale (the current one by default) unless you pass `fallback: true`, and then they use the same fallback chain as attribute access. Values are always bound, never interpolated. Operators and directions are checked against a fixed list.
+The same rule as reading applies. Query scopes use the exact locale (the current one by default) unless you pass `fallback: true`, and then they use the same fallback chain as attribute access. Values are always bound, never interpolated. Operators and directions are checked against a fixed list; `ilike` on another database throws `InvalidArgumentException` instead of failing in SQL.
 
 **Every storage gives the same answers on the same database.** Case sensitivity and sort order follow the database:
 
@@ -690,11 +690,20 @@ The migrations read the table names and key type when they run. Everything else 
 
 ## Development
 
+The suite needs the `pcntl`, `posix` and `pdo_sqlite` extensions, plus `pdo_mysql` and `pdo_pgsql` for those databases.
+
 ```bash
-composer check            # Pint + the test suite (SQLite)
+composer check            # Pint + the suite on in-memory SQLite: the everyday check
+
+docker compose up -d --wait
+composer check:all        # Pint + the suite on SQLite, MySQL, MariaDB and PostgreSQL
+composer test:pgsql       # one database: test:mysql, test:mariadb, test:pgsql
+docker compose down
 ```
 
-Run the suite against a real server with `TRANSLATIONS_TEST_DB` (`mysql`, `mariadb` or `pgsql`) plus `TRANSLATIONS_TEST_DB_HOST`, `_PORT`, `_DATABASE`, `_USERNAME` and `_PASSWORD`. CI runs all four databases. The concurrency tests run separate processes and need the `pcntl` extension and a server database.
+`compose.yaml` starts MySQL 8.4, MariaDB 11 and PostgreSQL 16 on ports 33061 to 33063. To use other servers, set `TRANSLATIONS_TEST_DB` (`sqlite`, `mysql`, `mariadb` or `pgsql`) and `TRANSLATIONS_TEST_DB_HOST`, `_PORT`, `_DATABASE`, `_USERNAME` and `_PASSWORD`, then run `vendor/bin/pest`. Any other `TRANSLATIONS_TEST_DB` value is an error, and a test checks that the server reached is the one named.
+
+The concurrency tests run writers in separate processes, so they are the only tests skipped on SQLite: an in-memory database can't be shared between processes. Everything else runs on every database, and nothing is skipped on MySQL, MariaDB or PostgreSQL. CI runs all four databases on every push.
 
 `vendor/bin/pest tests/Benchmarks` compares the storages on the configured database (`BENCH_MODELS` and `BENCH_NOISE` set the data size).
 

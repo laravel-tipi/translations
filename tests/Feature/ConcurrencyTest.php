@@ -27,12 +27,9 @@ use Tipi\Translations\Tests\TestCase;
  */
 
 beforeEach(function (): void {
+    // The only skip: the same tests run on MySQL, MariaDB and PostgreSQL.
     if (TestCase::databaseDriver() === 'sqlite') {
         $this->markTestSkipped('An in-memory SQLite database cannot be shared between processes.');
-    }
-
-    if (! function_exists('pcntl_fork')) {
-        $this->markTestSkipped('Requires the pcntl extension.');
     }
 });
 
