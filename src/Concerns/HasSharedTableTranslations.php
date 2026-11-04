@@ -167,6 +167,11 @@ trait HasSharedTableTranslations
         }
     }
 
+    protected function reloadTranslationsForUpdate(): void
+    {
+        $this->setRelation('translations', $this->translations()->lockForUpdate()->get());
+    }
+
     protected function translationValueSql(Builder $query, string $attribute, string $locale): array
     {
         return $this->sharedTranslationSql($query, $attribute, $locale, raw: false);

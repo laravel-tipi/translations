@@ -2,7 +2,15 @@
 
 All notable changes to this package are documented here. The package follows semantic versioning; before 1.0, minor versions may break the API.
 
-## Unreleased (0.2.0)
+## Unreleased (0.3.0)
+
+Drafts and locked updates, for editors such as `laravel-tipi/filament-translations`. The translation states table gains columns, with no upgrade path from 0.2: install the migrations anew.
+
+- Translation drafts (`setTranslationDraft($attribute, $locale, $value, $source)`, `getTranslationDraft()`, `getTranslationDrafts()`, `forgetTranslationDraft()`) and source fingerprints (`setTranslationSource()`, `getTranslationSource()`) on `HasTranslationStates`: unpublished values beside the published ones, never read as translations, written in the save's transaction and merged per attribute. A draft carries its own source (`getTranslationDraftSource()`); a translation changed without a new source forgets its old one. The states table has `drafts` and `sources` JSON columns.
+- `lockTranslationsForUpdate($callback)`: read, decide and write in one locked transaction, with locking reads in every storage, for optimistic concurrency and merges without lost updates. Tested with concurrent processes, including inside transactions that read before.
+- Requires `illuminate/console` and `illuminate/contracts`, which it uses directly.
+
+## 0.2.0
 
 A rewrite around a small model API and Localization 0.2. It shares no API, configuration or schema with 0.1 and has no upgrade path from it: install it as a new package.
 

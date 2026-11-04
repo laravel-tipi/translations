@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tipi\Translations\Concerns;
 
 use BackedEnum;
+use Closure;
 use Illuminate\Database\Eloquent\Attributes\Scope;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -12,6 +13,7 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Collection;
 use InvalidArgumentException;
+use LogicException;
 use Stringable;
 use Throwable;
 use Tipi\Support\Locale;
@@ -171,6 +173,13 @@ trait HasTranslations
      * @return list<string>
      */
     abstract protected function translationRowRelations(): array;
+
+    /**
+     * Read the stored translations again with locking reads, replacing
+     * what the model loaded. Called with the model's row locked, inside a
+     * transaction.
+     */
+    abstract protected function reloadTranslationsForUpdate(): void;
 
     /**
      * Rejects queries that use a translatable attribute as a column.
@@ -463,7 +472,9 @@ trait HasTranslations
      */
     public function save(array $options = []): bool
     {
-        if ($this->translationChanges === [] && ! $this->hasListenersBeforeWrite()) {
+        $stateChanges = method_exists($this, 'pendingTranslationStateChanges') ? $this->pendingTranslationStateChanges() : [];
+
+        if ($this->translationChanges === [] && $stateChanges === [] && ! $this->hasListenersBeforeWrite()) {
             return parent::save($options);
         }
 
@@ -472,15 +483,90 @@ trait HasTranslations
         $this->translationSaveDepth++;
 
         try {
-            return $this->getConnection()->transaction(fn (): bool => parent::save($options));
+            return $this->getConnection()->transaction(function () use ($options): bool {
+                $saved = parent::save($options);
+
+                // Drafts and sources (HasTranslationStates), in the same transaction.
+                if ($saved && method_exists($this, 'writeTranslationStateChanges')) {
+                    $this->writeTranslationStateChanges();
+                }
+
+                return $saved;
+            });
         } catch (Throwable $exception) {
             $this->restoreAfterFailedSave($before, $logged);
+
+            if (method_exists($this, 'restoreTranslationStateChanges')) {
+                $this->restoreTranslationStateChanges($stateChanges);
+            }
 
             throw $exception;
         } finally {
             if (--$this->translationSaveDepth === 0) {
                 $this->translationWriteLog = [];
             }
+        }
+    }
+
+    /**
+     * Read, decide and write without lost updates. In one transaction:
+     * locks the model's row, reads its translations (and translation states)
+     * again with locking reads, calls $callback with the model, then saves
+     * what the callback changed. No other save of the model can change its translations
+     * between that read and the write, in any storage.
+     *
+     * The callback sees exactly what is stored, so it can compare it with
+     * what a user started from and throw to abort. When the callback or
+     * the save fails, nothing is written and the changes the callback made
+     * are discarded: they were decided from a read whose lock is gone.
+     *
+     * Returns what the callback returns. Throws ModelNotFoundException when
+     * the model's row no longer exists.
+     *
+     * @template TReturn
+     *
+     * @param  Closure(static): TReturn  $callback
+     * @return TReturn
+     */
+    public function lockTranslationsForUpdate(Closure $callback): mixed
+    {
+        if (! $this->exists) {
+            throw new LogicException('Translations of a model that is not saved yet cannot be locked.');
+        }
+
+        $states = in_array(HasTranslationStates::class, class_uses_recursive(static::class), true);
+
+        if ($this->translationChanges !== [] || ($states && $this->pendingTranslationStateChanges() !== [])) {
+            throw new LogicException('Save or discard the unsaved translation changes before locking the translations.');
+        }
+
+        try {
+            return $this->getConnection()->transaction(function () use ($callback, $states): mixed {
+                if (! $this->lockTranslationOwner()) {
+                    throw (new ModelNotFoundException)->setModel(static::class, [$this->getKey()]);
+                }
+
+                $this->reloadTranslationsForUpdate();
+
+                if ($states) {
+                    // Drafts and sources are read, decided and written too.
+                    $this->setRelation('translationStates', $this->translationStates()->lockForUpdate()->get());
+                }
+
+                $result = $callback($this);
+
+                $this->save();
+
+                return $result;
+            });
+        } catch (Throwable $exception) {
+            $this->translationChanges = [];
+
+            if ($states) {
+                $this->restoreTranslationStateChanges([]);
+            }
+
+            throw $exception;
         }
     }
 
@@ -879,7 +965,7 @@ trait HasTranslations
         }
 
         if (method_exists($this, 'syncTranslationStates')) {
-            $this->syncTranslationStates(array_map('strval', array_keys($changes)));
+            $this->syncTranslationStates($changes);
         }
     }
 

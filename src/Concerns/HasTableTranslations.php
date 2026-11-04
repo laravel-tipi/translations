@@ -169,6 +169,11 @@ trait HasTableTranslations
         }
     }
 
+    protected function reloadTranslationsForUpdate(): void
+    {
+        $this->setRelation('translations', $this->translations()->lockForUpdate()->get());
+    }
+
     protected function translationValueSql(Builder $query, string $attribute, string $locale): array
     {
         $relation = $this->translations();

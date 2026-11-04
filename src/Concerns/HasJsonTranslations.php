@@ -112,6 +112,22 @@ trait HasJsonTranslations
         }
     }
 
+    protected function reloadTranslationsForUpdate(): void
+    {
+        $attributes = $this->getTranslatableAttributes();
+
+        $stored = $this->newQueryWithoutScopes()->whereKey($this->getKeyForSaveQuery())->toBase()->lockForUpdate()->first($attributes);
+
+        if ($stored === null) {
+            throw (new ModelNotFoundException)->setModel(static::class, [$this->getKey()]);
+        }
+
+        foreach ($attributes as $attribute) {
+            $this->attributes[$attribute] = $stored->{$attribute};
+            $this->original[$attribute] = $stored->{$attribute};
+        }
+    }
+
     protected function writeTranslations(array $changes): void
     {
         // Written with the model row.

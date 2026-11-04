@@ -423,7 +423,33 @@ Concurrent saves of the same model, from separate processes, behave like this on
 - **Table storage** locks the model row, then writes each changed locale with one atomic upsert of the changed columns, and deletes an emptied row only if it is still empty when deleted.
 - **Shared storage** locks the model row, then writes every changed value with one atomic upsert (each value is its own row) and deletes removed values. It never reads rows with locks, so writers of *different* models sharing the table don't block each other.
 
-Each storage locks the model's row before writing rows, and `delete()` locks it before deleting them, so a model is never deleted between the check and the write. These rules are tested with concurrent processes on MySQL, MariaDB and PostgreSQL, including many writers on different models of one shared table. The package doesn't add optimistic locking: the same value saved by two editors is last-write-wins, as for any Eloquent attribute. Changes are computed from the model as you loaded it, so setting a value to what *your copy* already holds is no change, even if another process changed it meanwhile.
+Each storage locks the model's row before writing rows, and `delete()` locks it before deleting them, so a model is never deleted between the check and the write. These rules are tested with concurrent processes on MySQL, MariaDB and PostgreSQL, including many writers on different models of one shared table. A plain `save()` doesn't check what others saved: the same value saved by two editors is last-write-wins, as for any Eloquent attribute. Changes are computed from the model as you loaded it, so setting a value to what *your copy* already holds is no change, even if another process changed it meanwhile. To decide from what is stored *now*, use `lockTranslationsForUpdate()`.
+
+### Read-modify-write
+
+`lockTranslationsForUpdate()` reads, decides and writes in one transaction, without lost updates:
+
+```php
+$wine->lockTranslationsForUpdate(function (Wine $wine) use ($expected, $name): void {
+    // Exactly what is stored now, read with the model's row locked.
+    if ($wine->getTranslation('name', 'ka') !== $expected) {
+        throw new NameChangedMeanwhile;
+    }
+
+    $wine->setTranslation('name', 'ka', $name);
+}); // saved before the lock is released
+```
+
+1. It locks the model's row and reads its translations again with locking reads (and drops loaded translation states, so they are read again).
+2. It calls the callback with the model, which may change translations, or throw to abort.
+3. It saves the model and commits.
+
+Every save of the model locks the same row, so no other save can change its translations between steps 1 and 3, in any storage. Use it for optimistic concurrency (compare with what a user started from, as above), for merges and for appends. It returns what the callback returns.
+
+- It throws `ModelNotFoundException` when the model was deleted, and `LogicException` for a model that isn't saved yet or has unsaved translation changes (they were computed from an older read: save or discard them first).
+- When the callback or the save throws, nothing is written and the changes the callback made are discarded, because they were decided from a read whose lock is gone. Call it again to retry.
+- Inside your own `DB::transaction()` it uses a savepoint, and the lock lasts until your transaction commits.
+- If your transaction read the model before, MySQL and PostgreSQL still hand the callback what is committed now. MariaDB (11.6+, `innodb_snapshot_isolation`) refuses the locking read instead with a `DeadlockException`, which rolls your transaction back so it can be retried. The callback never sees a stale value.
 
 SQLite allows one writer at a time, so its writes never interleave.
 
@@ -616,7 +642,7 @@ All three have the same API, so you can change a model's storage later without c
 
 ## Translation states
 
-Optional editorial metadata per translated locale: whether it is **outdated**, and an optional **status** from your own enum.
+Optional editorial metadata per translated locale: whether it is **outdated**, an optional **status** from your own enum, unpublished [drafts](#drafts) and [source fingerprints](#sources).
 
 ```bash
 php artisan vendor:publish --tag=translations-config
@@ -648,7 +674,48 @@ $wine->markTranslationOutdated('ka');
 $wine->markTranslationCurrent('ka');
 ```
 
-States are kept in sync on `save()`. A locale whose translations changed is marked current, because someone just edited it. A locale that lost all its values loses its state. An already outdated locale keeps the time it became outdated. States are deleted with the model, and kept on soft delete.
+States are kept in sync on `save()`. A locale whose translations changed is marked current, because someone just edited it. A translation changed without a new [source](#sources) loses its old one. A locale that lost all its values loses its state, unless it has drafts. An already outdated locale keeps the time it became outdated. States are deleted with the model, and kept on soft delete.
+
+### Drafts
+
+A draft is an **unpublished** value of an attribute in a locale, kept beside the published one: work in progress that readers must not see yet, such as a half-translated document.
+
+```php
+$wine->setTranslationDraft('description', 'ka', $partial, source: $fingerprints)->save();
+
+$wine->getTranslation('description', 'ka');            // the published value (or null): never the draft
+$wine->description;                                     // published or fallback: never the draft
+$wine->getTranslationDraft('description', 'ka');       // $partial
+$wine->getTranslationDraftSource('description', 'ka'); // $fingerprints: what the draft was made from
+$wine->getTranslationDrafts('ka');                     // ['description' => $partial]
+
+// Publishing is explicit: set the translation and its source, forget the draft.
+$wine->setTranslation('description', 'ka', $complete)
+    ->setTranslationSource('description', 'ka', $fingerprints)
+    ->forgetTranslationDraft('description', 'ka')
+    ->save();
+```
+
+- Reading translations never sees drafts: attribute access, `getTranslation()`, fallback, `getAllTranslations()`, query scopes and serialization (drafts are hidden on `TranslationState`).
+- Drafts are pending until `save()`, which writes them in its transaction with the model's row locked, after the translations. A failed save writes none and keeps them pending. A save with only draft changes doesn't update the model (no timestamps, no `updated` event).
+- Drafts of different attributes of a locale merge: each save changes only its own attributes in the locale's state row.
+- `lockTranslationsForUpdate()` reads drafts again with locking reads, so a callback can decide from them too; drafts it set are discarded if it fails.
+- A draft has its own optional [source](#sources), kept and forgotten with it, so the published value and the draft can each be compared with the current source.
+- Writing a translation doesn't forget its draft: an application writing published values while a translator works on a draft never discards the translator's work behind their back.
+
+### Sources
+
+What the published translation was made from, per attribute and locale: any JSON value (a fingerprint of the source text, a revision number, one fingerprint per paragraph), set and compared by the code that translates, to tell when the source changed since. Written like drafts.
+
+```php
+$wine->setTranslation('description', 'ka', $translated)
+    ->setTranslationSource('description', 'ka', ['0' => md5($paragraph)])
+    ->save();
+
+$wine->getTranslationSource('description', 'ka');
+```
+
+A source describes one value. A save that changes a translation without setting its source forgets the old source, so an import or other code writing translations never inherits a fingerprint recorded for a different text.
 
 The states table is polymorphic, like shared storage: its `translatable_id` follows [`morph_key_type`](#model-keys-and-morph-types), and [`translations:prune-orphans`](#integrity-without-a-foreign-key) cleans up after deletes that bypass Eloquent.
 
