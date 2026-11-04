@@ -16,11 +16,14 @@ use Tipi\Translations\Exceptions\InvalidTranslatableModelException;
 use Tipi\Translations\Models\TranslationState;
 
 /**
- * Editorial state per translated locale: whether it is outdated and an
- * optional status (an application enum). Works with every storage.
+ * Editorial state per translated locale: whether it is outdated, an
+ * optional status (an application enum), unpublished drafts and what the
+ * translations were made from (sources). Works with every storage.
  *
  * Kept in sync on save(): a locale whose translations changed is marked
- * current, and a locale that lost all its values loses its state.
+ * current, a changed translation saved without a source loses its old
+ * one, and a locale that lost all its values loses its state unless it
+ * has drafts.
  *
  * @mixin Model
  */
@@ -33,7 +36,8 @@ trait HasTranslationStates
      */
     /**
      * Draft and source changes not written yet: locale => kind
-     * ("drafts", "sources") => attribute => value (null removes).
+     * ("drafts", "sources") => attribute => value (null removes). A draft
+     * is stored as ['value' => …, 'source' => …].
      *
      * @var array<string, array<string, array<string, mixed>>>
      */
@@ -121,16 +125,25 @@ trait HasTranslationStates
      | Drafts
      |
      | A draft is an unpublished value of an attribute in a locale: work in
-     | progress kept beside the published value. Reading translations
-     | ($model->name, getTranslation(), fallback, queries, serialization)
-     | never sees drafts, so an unfinished translation is never shown.
-     | Publishing a draft is setting the translation and forgetting the
+     | progress kept beside the published value, with its own source (what
+     | it was made from, see Sources). Reading translations ($model->name,
+     | getTranslation(), fallback, queries, serialization) never sees
+     | drafts, so an unfinished translation is never shown. Publishing a
+     | draft is setting the translation (and its source) and forgetting the
      | draft, which the application does explicitly.
      */
 
     public function getTranslationDraft(string $attribute, string|Locale $locale): mixed
     {
-        return $this->stateValue('drafts', $attribute, $locale);
+        return $this->draftEntry($attribute, $locale)['value'] ?? null;
+    }
+
+    /**
+     * What the draft was made from: the source given with it.
+     */
+    public function getTranslationDraftSource(string $attribute, string|Locale $locale): mixed
+    {
+        return $this->draftEntry($attribute, $locale)['source'] ?? null;
     }
 
     public function hasTranslationDraft(string $attribute, string|Locale $locale): bool
@@ -143,16 +156,19 @@ trait HasTranslationStates
      */
     public function getTranslationDrafts(string|Locale $locale): array
     {
-        return $this->stateValues('drafts', $locale);
+        return array_filter(
+            array_map(fn (mixed $entry): mixed => is_array($entry) ? ($entry['value'] ?? null) : null, $this->stateValues('drafts', $locale)),
+            fn (mixed $value): bool => $value !== null,
+        );
     }
 
     /**
-     * Set a draft, written by the next save() in its transaction. Null
-     * removes it.
+     * Set a draft and what it was made from, written by the next save() in
+     * its transaction. A null value removes the draft and its source.
      */
-    public function setTranslationDraft(string $attribute, string|Locale $locale, mixed $value): static
+    public function setTranslationDraft(string $attribute, string|Locale $locale, mixed $value, mixed $source = null): static
     {
-        return $this->changeStateValue('drafts', $attribute, $locale, $value);
+        return $this->changeStateValue('drafts', $attribute, $locale, $value === null ? null : ['value' => $value, 'source' => $source]);
     }
 
     public function forgetTranslationDraft(string $attribute, string|Locale $locale): static
@@ -160,13 +176,27 @@ trait HasTranslationStates
         return $this->setTranslationDraft($attribute, $locale, null);
     }
 
+    /**
+     * @return array{value?: mixed, source?: mixed}
+     */
+    private function draftEntry(string $attribute, string|Locale $locale): array
+    {
+        $entry = $this->stateValue('drafts', $attribute, $locale);
+
+        return is_array($entry) ? $entry : [];
+    }
+
     /*
      | Sources
      |
-     | What a translation was made from: any JSON value per attribute and
-     | locale (a fingerprint of the source text, per segment, a revision
-     | id), set by whoever translates and compared by them to tell when the
-     | source changed since. Written like drafts.
+     | What the published translation was made from: any JSON value per
+     | attribute and locale (a fingerprint of the source text, per segment,
+     | a revision id), set by whoever translates and compared by them to
+     | tell when the source changed since. Written like drafts.
+     |
+     | A source describes one value: when a save changes a translation
+     | without setting its source, the source is forgotten, so it never
+     | vouches for a value it wasn't recorded for.
      */
 
     public function getTranslationSource(string $attribute, string|Locale $locale): mixed
@@ -284,15 +314,28 @@ trait HasTranslationStates
     }
 
     /**
-     * Called by save() for the locales whose translations changed.
+     * Called by save() with the translations it wrote: locale => attribute
+     * => value.
      *
-     * @param  list<string>  $locales
+     * @param  array<string, array<string, mixed>>  $changes
      */
-    protected function syncTranslationStates(array $locales): void
+    protected function syncTranslationStates(array $changes): void
     {
         $translated = $this->getTranslatedLocales();
 
-        foreach ($locales as $locale) {
+        foreach ($changes as $locale => $attributes) {
+            $locale = (string) $locale;
+
+            // A changed translation without a new source has none: written
+            // with the state changes, later in the same save.
+            $sources = $this->loadedTranslationStates()->firstWhere('locale_code', $locale)?->sources ?? [];
+
+            foreach (array_keys($attributes) as $attribute) {
+                if (isset($sources[$attribute]) && ! array_key_exists($attribute, $this->translationStateChanges[$locale]['sources'] ?? [])) {
+                    $this->translationStateChanges[$locale]['sources'][$attribute] = null;
+                }
+            }
+
             if (in_array($locale, $translated, true)) {
                 $this->markTranslationCurrent($locale);
 

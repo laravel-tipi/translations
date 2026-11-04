@@ -965,7 +965,7 @@ trait HasTranslations
         }
 
         if (method_exists($this, 'syncTranslationStates')) {
-            $this->syncTranslationStates(array_map('strval', array_keys($changes)));
+            $this->syncTranslationStates($changes);
         }
     }
 

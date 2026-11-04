@@ -44,6 +44,50 @@ it('stores drafts and sources with the next save', function (string $class): voi
         ->and(reload($article)->getTranslationSource('title', 'ka'))->toBe(['0' => 'abc']);
 })->with('stateful storages');
 
+it('keeps a draft’s source with the draft, apart from the published one', function (string $class): void {
+    $article = article($class, ['en' => ['title' => 'Saperavi'], 'ka' => ['title' => 'საფერავი']]);
+    $article->setTranslationSource('title', 'ka', ['0' => 'published'])->save();
+
+    reload($article)->setTranslationDraft('title', 'ka', 'საფერ…', ['0' => 'draft'])->save();
+
+    $fresh = reload($article);
+
+    expect($fresh->getTranslationDraftSource('title', 'ka'))->toBe(['0' => 'draft'])
+        ->and($fresh->getTranslationSource('title', 'ka'))->toBe(['0' => 'published'])
+        ->and($fresh->getTranslationDrafts('ka'))->toBe(['title' => 'საფერ…']);
+
+    // Publishing: the translation with the draft's source.
+    $fresh->setTranslation('title', 'ka', 'საფერავი!')
+        ->setTranslationSource('title', 'ka', $fresh->getTranslationDraftSource('title', 'ka'))
+        ->forgetTranslationDraft('title', 'ka')
+        ->save();
+
+    $fresh = reload($article);
+
+    expect($fresh->getTranslationSource('title', 'ka'))->toBe(['0' => 'draft'])
+        ->and($fresh->hasTranslationDraft('title', 'ka'))->toBeFalse()
+        ->and($fresh->getTranslationDraftSource('title', 'ka'))->toBeNull();
+})->with('stateful storages');
+
+it('forgets the source of a translation changed without one', function (string $class): void {
+    $article = article($class, ['en' => ['title' => 'Saperavi', 'body' => 'Dry red.'], 'ka' => ['title' => 'საფერავი', 'body' => 'მშრალი.']]);
+    $article->setTranslationSource('title', 'ka', 't')->setTranslationSource('body', 'ka', 'b')->save();
+
+    // Written by other code: the old source no longer describes it.
+    reload($article)->setTranslation('title', 'ka', 'სხვა')->save();
+
+    $fresh = reload($article);
+
+    expect($fresh->getTranslationSource('title', 'ka'))->toBeNull()
+        ->and($fresh->getTranslationSource('body', 'ka'))->toBe('b');
+
+    // Set together, the new source is kept; saving the same value changes nothing.
+    $fresh->setTranslation('title', 'ka', 'სათაური')->setTranslationSource('title', 'ka', 'new')->save();
+    reload($article)->setTranslation('title', 'ka', 'სათაური')->save();
+
+    expect(reload($article)->getTranslationSource('title', 'ka'))->toBe('new');
+})->with('stateful storages');
+
 it('never reads drafts as translations', function (string $class): void {
     $article = article($class, ['en' => ['title' => 'Saperavi']]);
     $article->setTranslationDraft('title', 'ka', 'Draft')->save();
