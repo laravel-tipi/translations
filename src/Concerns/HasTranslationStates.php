@@ -30,11 +30,6 @@ use Tipi\Translations\Models\TranslationState;
 trait HasTranslationStates
 {
     /**
-     * Deleted with the model (not on soft delete), in one transaction.
-     *
-     * @return MorphMany<TranslationState, $this>
-     */
-    /**
      * Draft and source changes not written yet: locale => kind
      * ("drafts", "sources") => attribute => value (null removes). A draft
      * is stored as ['value' => …, 'source' => …].
@@ -43,6 +38,11 @@ trait HasTranslationStates
      */
     protected array $translationStateChanges = [];
 
+    /**
+     * Deleted with the model (not on soft delete), in one transaction.
+     *
+     * @return MorphMany<TranslationState, $this>
+     */
     public function translationStates(): MorphMany
     {
         return $this->translationMorphMany(config('translations.states.model', TranslationState::class));
@@ -345,7 +345,13 @@ trait HasTranslationStates
             $state = $this->loadedTranslationStates()->firstWhere('locale_code', $locale);
 
             // A locale with drafts keeps them, without the outdated flag.
-            if ($state !== null && ($state->drafts ?? []) !== []) {
+            // Drafts removed by this same save don't count.
+            $drafts = array_filter(
+                array_replace($state->drafts ?? [], $this->translationStateChanges[$locale]['drafts'] ?? []),
+                fn (mixed $draft): bool => $draft !== null,
+            );
+
+            if ($state !== null && $drafts !== []) {
                 if ($state->outdated_at !== null) {
                     $state->outdated_at = null;
                     $state->save();

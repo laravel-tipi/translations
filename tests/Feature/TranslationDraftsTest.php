@@ -218,6 +218,15 @@ it('keeps the drafts of a locale whose translations are removed', function (stri
         ->and($fresh->isTranslationOutdated('ka'))->toBeFalse();
 })->with('stateful storages');
 
+it('removes the state of a locale whose translations and drafts are removed together', function (string $class): void {
+    $article = article($class, ['en' => ['title' => 'Saperavi'], 'ka' => ['title' => 'საფერავი']]);
+    $article->setTranslationDraft('body', 'ka', 'Draft')->setTranslationSource('title', 'ka', ['0' => 'abc'])->save();
+
+    reload($article)->forgetTranslations('ka')->forgetTranslationDraft('body', 'ka')->save();
+
+    expect(TranslationState::query()->where('locale_code', 'ka')->exists())->toBeFalse();
+})->with('stateful storages');
+
 it('deletes drafts with the model', function (string $class): void {
     $article = article($class, ['en' => ['title' => 'Saperavi']]);
     $article->setTranslationDraft('title', 'ka', 'Draft')->save();

@@ -12,11 +12,14 @@ use Tipi\Translations\Exceptions\InvalidTranslatableModelException;
 
 /**
  * Editorial state of one locale of one translatable model: an optional
- * status and since when the translation is outdated.
+ * status, since when the translation is outdated, unpublished drafts and
+ * the sources translations were made from.
  *
  * @property string $locale_code
  * @property BackedEnum|string|null $status
  * @property CarbonImmutable|null $outdated_at
+ * @property array<string, array{value: mixed, source: mixed}>|null $drafts
+ * @property array<string, mixed>|null $sources
  */
 class TranslationState extends Model
 {
