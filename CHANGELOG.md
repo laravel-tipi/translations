@@ -2,7 +2,15 @@
 
 All notable changes to this package are documented here. The package follows semantic versioning; before 1.0, minor versions may break the API.
 
-## Unreleased (0.2.0)
+## Unreleased (0.3.0)
+
+Drafts and locked updates, for editors such as `laravel-tipi/filament-translations`. The translation states table gains columns, with no upgrade path from 0.2: install the migrations anew.
+
+- Translation drafts (`setTranslationDraft($attribute, $locale, $value, $source)`, `getTranslationDraft()`, `getTranslationDrafts()`, `forgetTranslationDraft()`) and source fingerprints (`setTranslationSource()`, `getTranslationSource()`) on `HasTranslationStates`: unpublished values beside the published ones, never read as translations, written in the save's transaction and merged per attribute. A draft carries its own source (`getTranslationDraftSource()`); a translation changed without a new source forgets its old one. The states table has `drafts` and `sources` JSON columns.
+- `lockTranslationsForUpdate($callback)`: read, decide and write in one locked transaction, with locking reads in every storage, for optimistic concurrency and merges without lost updates. Tested with concurrent processes, including inside transactions that read before.
+- Requires `illuminate/console` and `illuminate/contracts`, which it uses directly.
+
+## 0.2.0
 
 A rewrite around a small model API and Localization 0.2. It shares no API, configuration or schema with 0.1 and has no upgrade path from it: install it as a new package.
 
@@ -20,8 +28,6 @@ A rewrite around a small model API and Localization 0.2. It shares no API, confi
 - A failed save (listener, write or commit) leaves every translation change pending, restores the loaded storage state and leaves a new model new, so `save()` can be retried.
 - The package never retries a save or delete itself; retrying is the application's choice, documented with its effect on events.
 - Concurrency safety, tested with concurrent processes on MySQL, MariaDB and PostgreSQL: JSON storage merges changed values into a locked fresh read; table storage writes each locale with one atomic upsert and deletes an emptied row only if it is still empty; shared storage writes each value as its own row with one upsert.
-- Translation drafts (`setTranslationDraft($attribute, $locale, $value, $source)`, `getTranslationDraft()`, `getTranslationDrafts()`, `forgetTranslationDraft()`) and source fingerprints (`setTranslationSource()`, `getTranslationSource()`) on `HasTranslationStates`: unpublished values beside the published ones, never read as translations, written in the save's transaction and merged per attribute. A draft carries its own source (`getTranslationDraftSource()`); a translation changed without a new source forgets its old one. The states table has `drafts` and `sources` JSON columns.
-- `lockTranslationsForUpdate($callback)`: read, decide and write in one locked transaction, with locking reads in every storage, for optimistic concurrency and merges without lost updates. Tested with concurrent processes, including inside transactions that read before.
 - Every storage locks the model's row before writing translation rows, and `delete()` locks it before deleting them: a model deleted by another process can't receive rows, and saving its translations throws `ModelNotFoundException`.
 - `delete()` removes the model and its translation rows (table, shared, states) in one transaction, after `deleting` listeners allowed it, and also with events disabled (`deleteQuietly()`, `forceDeleteQuietly()`).
 - `translations:prune-orphans` deletes shared translations and translation states left behind by deletes that bypass Eloquent (`--pretend` counts them).
